@@ -141,7 +141,8 @@ kbd { display: inline-block; min-width: 20px; padding: 3px 5px; font: 600 11px/1
 .lines { position: fixed; left: 12px; top: 68px; width: 272px; max-height: calc(100vh - 252px); overflow: auto; padding: 0 6px 6px; background: var(--card); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--float); z-index: 10; }
 .lines .lh { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 12px 8px 8px; background: var(--card); font: 600 12px/1 var(--body); letter-spacing: .1em; color: var(--ink-3); }
 .lines .lh b { padding: 3px 7px; border-radius: 6px; background: var(--paper-2); font: 600 12px/1 var(--sign); letter-spacing: 0; color: var(--ink-2); }
-.lines .row { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; width: 100%; padding: 8px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
+/* 几百条线路时，滚出面板的行不排版；占位高度是内容区的（行高 54 减上下内边距），写错了滚动条会变长 */
+.lines .row { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; width: 100%; padding: 8px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 38px; }
 .lines .row:hover { background: var(--paper-2); }
 .lines .no { grid-row: span 2; min-width: 34px; padding: 0 6px; font: 600 12px/22px var(--sign); text-align: center; color: #fff; background: var(--c); border-radius: 6px; }
 .lines .t { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1289,8 +1290,11 @@ function renderLines() {
       + `<span class="t" title="${esc(l.title)}">${esc(l.title)}</span>`
       + `<span class="d">${fmtTime(l.start)}　${l.turnCount} 轮${agents ? `　${agents} 个子代理` : ''}</span></button>`;
   }).join('');
-  nav.querySelectorAll('.row').forEach((b) => b.addEventListener('click', () => select(laneTurns.get(b.dataset.lane)[0].id, true)));
 }
+$('lines').addEventListener('click', (e) => {
+  const b = e.target.closest('.row');
+  if (b) select(laneTurns.get(b.dataset.lane)[0].id, true);
+});
 
 // ---------- 启动 ----------
 $('pname').innerHTML = `${esc(DATA.project.name)}<small>上下文树</small>`;
