@@ -30,6 +30,15 @@ node bin/ctxtree.mjs all --open
 - `--md`、`--json` 同时导出 Markdown / JSON。
 - 文件太大时用 `--no-tools`（不保存工具输入输出）、`--no-thinking`、`--max-tool 1000`。
 
+## 密钥脱敏
+
+解析时就把密钥换成 `[密钥已隐藏]`，HTML、Markdown、JSON 和压力页都只拿到脱敏后的文本，没有开关可以关掉。命令行会报告这次隐藏了几处。
+
+- 认得出的：`sk-` / `ak_` / `sk_live_` 开头的 API key，GitHub、AWS、Google、Slack、Hugging Face 这类固定前缀的令牌，JWT，私钥块，连接串里的密码，`Bearer` 后面的令牌，以及 `xxx_API_KEY=`、`"token": "…"`、`--api-key …` 这类赋值里看起来随机的值。
+- 放过的：`$VAR`、`<your-key>` 这类占位，路径，代码里的属性引用，`public_key`，以及 `sk-fragment-cache-v1` 这种不像随机串的标识符。
+- 按规则识别，不保证一个不漏；不认识格式的密钥（比如纯数字、很短的口令）可能留在页面里，外发前自己再看一眼。
+- 只处理导出的文件。`~/.claude/projects/` 下的原始转录和项目里的配置文件不会动，密钥还在那里。
+
 ## 页面里的操作
 
 | 操作 | 作用 |

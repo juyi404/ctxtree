@@ -182,10 +182,78 @@ function readJsonl(file) {
   return out;
 }
 
+// ---------- 密钥脱敏 ----------
+// 转录会原样留下密钥（.env、请求头、配置文件、连接串）。写进导出文件的文字一律先过 redact，认出来的换成占位，不能关。
+// hidden 记本次 parseProject 隐藏了几处
+export const HIDDEN = '[密钥已隐藏]';
+let hidden = 0;
+const hide = () => { hidden++; return HIDDEN; };
+const alnumMix = (s) => /[A-Za-z]/.test(s) && /\d/.test(s);
+// 随机串里总有一段 16 位以上字母数字混排的；sk-fragment-cache-v1、gamenet2-review-v1 这类标识符没有
+const looksRandom = (s) => (s.match(/[A-Za-z0-9]{16,}/g) || []).some(alnumMix);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// 文档和示例里的 user:password@host、${DB_PASS}、<your-key> 之类不算
+const PLACEHOLDER = /^(?:\$|<|\{|%|x+$|\*+$|pass(?:word)?$|secret$|your)/i;
+// 代码里的 options.secretAccessKey、process.env.API_KEY，和 PWD=/c/Users/… 这种路径
+const CODE = /^[A-Za-z_$][A-Za-z_$]{2,}(?:\.[A-Za-z_$][\w$]*)+$/;
+const PATH = /^(?:\.{1,2}\/|~\/|[A-Za-z]:[\\/]|\/[a-z][\w.-]*\/)/;
+// 键名后面的值：口令是人起的，有字母有数字就算；key/token/secret 要像随机串，免得把存储键名、版本号当密钥
+const assigned = (m, head, v) => {
+  if (PLACEHOLDER.test(v) || CODE.test(v) || PATH.test(v) || /public/i.test(head)) return m;
+  const secret = /pass|pwd/i.test(head) ? alnumMix(v) : looksRandom(v) || UUID.test(v);
+  return secret ? head + hide() : m;
+};
+const NAME = String.raw`\w*?(?:key|token|secret|password|passwd|pwd)`;
+const FLAG = String.raw`[\w-]*?(?:key|token|secret|password|passwd|pwd)`;
+const VALUE = String.raw`([^\s"'\x60,;&<>(){}[\]]{6,})`;
+const SECRET_RULES = [
+  // 私钥整块；被截断时一直隐藏到结尾
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, hide],
+  // sk- 开头：OpenAI、Anthropic、DeepSeek 和各家中转；ak_：Cardinal；sk_live_ 这类：Stripe。
+  // 前面不要求词边界，JSON 字符串里的 \nsk-… 也要认出来；sk-fragment-cache-v1 这种不像随机串的放过
+  [/(?:sk-|ak[_-]|[sr]k_(?:live|test)_)[A-Za-z0-9_-]{16,}/g, (m) => (looksRandom(m) ? hide() : m)],
+  // 其他固定前缀：GitHub、AWS、Google、Slack、Hugging Face、JWT
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[abposr]-[A-Za-z0-9-]{10,}|hf_[A-Za-z0-9]{30,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/g, hide],
+  // 连接串里的密码：scheme://user:密码@host；postgres:postgres、root:root 这种用户名当密码的本地默认值不算
+  [/(\b[a-z][a-z0-9+.-]*:\/\/([^\s:\/@]+):)([^\s@\/]{4,})(?=@)/gi, (m, head, user, v) => (PLACEHOLDER.test(v) || v === user ? m : head + hide())],
+  // 请求头：Bearer xxx、Basic xxx
+  [/(\b(?:Bearer|Basic)\s+)([A-Za-z0-9._~+\/=-]{16,})/g, (m, head, v) => (alnumMix(v) ? head + hide() : m)],
+  // 赋值：api_key=xxx、"password": "xxx"、OPENAI_KEY: xxx、openaiApiKey = 'xxx'（冒号等号前后不跨行）
+  [new RegExp(String.raw`(\b${NAME}["']?[ \t]*[:=][ \t]*["']?)${VALUE}`, 'gi'), assigned],
+  // 命令行参数：--api-key xxx、--password xxx
+  [new RegExp(String.raw`((?:^|\s)--?${FLAG}[ \t]+["']?)${VALUE}`, 'gi'), assigned],
+];
+// 绝大多数文字一个规则都碰不上，先粗筛一遍
+const MAYBE = /sk-|ak[_-]|k_live_|k_test_|gh[pousr]_|github_pat_|hf_|AKIA|AIza|xox|eyJ|PRIVATE KEY|:\/\/|bearer|basic|key|token|secret|passw|pwd/i;
+
+export function redact(s) {
+  if (!s || !MAYBE.test(s)) return s;
+  for (const [re, fn] of SECRET_RULES) s = s.replace(re, fn);
+  return s;
+}
+
+function redactDeep(v) {
+  if (typeof v === 'string') return redact(v);
+  if (Array.isArray(v)) return v.map(redactDeep);
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const k of Object.keys(v)) o[k] = redactDeep(v[k]);
+    return o;
+  }
+  return v;
+}
+
+// 先脱敏再截断，免得密钥被截成半截认不出。长文本只对截断处往后多留的一截做脱敏，不用扫完几 MB 的输出；
+// 这一截末尾被切开的半个词先去掉——前面的密钥换成短占位后，它可能被挪进保留范围
 function clip(s, n) {
   if (s == null) return '';
   s = String(s);
-  return n > 0 && s.length > n ? `${s.slice(0, n)}\n…（已截断，原长 ${s.length} 字符）` : s;
+  if (!(n > 0) || s.length <= n) return redact(s);
+  let w = s.slice(0, n + 1024);
+  if (s.length > w.length) w = w.replace(/[^\s"'`,;<>(){}[\]]{1,512}$/, '');
+  const r = redact(w);
+  if (w.length === s.length && r.length <= n) return r;
+  return `${r.slice(0, n)}\n…（已截断，原长 ${s.length} 字符）`;
 }
 
 function blocksOf(msg) {
@@ -281,11 +349,10 @@ function parseTranscript(records, laneKey, opts) {
     const parent = p ? turnOf(p) : null;
     const t = {
       id: `${laneKey}:${r.uuid}`,
-      uuid: r.uuid,
       lane: laneKey,
       parent: typeof parent === 'string' ? `${laneKey}:${parent}` : null,
       externalParent: parent && typeof parent === 'object' ? parent.external : null,
-      prompt: promptText(r.message),
+      prompt: redact(promptText(r.message)),
       t0: r.timestamp, t1: r.timestamp,
       model: null, models: [], ctx: 0, out: 0,
       items: [], tools: {}, compactions: [], interrupted: false, errors: 0, agents: [],
@@ -315,15 +382,18 @@ function parseTranscript(records, laneKey, opts) {
       if (r.isApiErrorMessage) t.errors++;
       for (const b of blocksOf(m)) {
         if (b.type === 'text' && b.text.trim()) {
+          const text = redact(b.text);
           const last = t.items[t.items.length - 1];
-          if (last && last.k === 'text' && last.mid === m.id) last.text += `\n\n${b.text}`;
-          else t.items.push({ k: 'text', text: b.text, mid: m.id, ts: r.timestamp });
+          if (last && last.k === 'text' && last.mid === m.id) last.text += `\n\n${text}`;
+          else t.items.push({ k: 'text', text, mid: m.id, ts: r.timestamp });
         } else if (b.type === 'thinking' && opts.thinking && (b.thinking || '').trim()) {
           t.items.push({ k: 'think', text: clip(b.thinking, opts.maxThinking) });
         } else if (b.type === 'tool_use') {
           t.tools[b.name] = (t.tools[b.name] || 0) + 1;
-          const step = { k: 'tool', id: b.id, name: b.name, sum: toolSummary(b.name, b.input), ts: r.timestamp };
-          if (opts.tools) step.input = clip(JSON.stringify(b.input, null, 2), opts.maxTool);
+          // 先逐个字符串脱敏再序列化：序列化后换行变成字面的 \n，粘在密钥前面会让词边界失效
+          const input = redactDeep(b.input ?? {});
+          const step = { k: 'tool', id: b.id, name: b.name, sum: toolSummary(b.name, input), ts: r.timestamp };
+          if (opts.tools) step.input = clip(JSON.stringify(input, null, 2), opts.maxTool);
           steps.set(b.id, step);
           t.items.push(step);
         }
@@ -342,17 +412,17 @@ function parseTranscript(records, laneKey, opts) {
           if (/^\[Request interrupted/.test(txt)) t.interrupted = true;
           else if (/^<task-notification>/.test(txt)) {
             const sum = (txt.match(/<summary>([\s\S]*?)<\/summary>/) || [])[1];
-            t.items.push({ k: 'note', text: `后台任务通知：${(sum || txt).replace(/<[^>]+>/g, ' ').trim().slice(0, 400)}` });
+            t.items.push({ k: 'note', text: `后台任务通知：${redact((sum || txt).replace(/<[^>]+>/g, ' ').trim()).slice(0, 400)}` });
           } else if (/^<local-command-std(out|err)>/.test(txt)) {
             const body = stripNoise(txt.replace(/<\/?local-command-std(out|err)>/g, ''));
-            if (body) t.items.push({ k: 'note', text: `命令输出：${body.slice(0, 1200)}` });
+            if (body) t.items.push({ k: 'note', text: `命令输出：${redact(body).slice(0, 1200)}` });
           }
         }
       }
     } else if (r.type === 'attachment') {
       const a = r.attachment || {};
       if (a.type === 'queued_command' && a.prompt && a.origin?.kind !== 'system') {
-        t.items.push({ k: 'queued', text: stripNoise(String(a.prompt)), ts: r.timestamp });
+        t.items.push({ k: 'queued', text: redact(stripNoise(String(a.prompt))), ts: r.timestamp });
       }
     } else if (r.type === 'system') {
       if (r.subtype === 'compact_boundary') {
@@ -368,7 +438,13 @@ function parseTranscript(records, laneKey, opts) {
 
   for (const { t, u } of usageByMsg.values()) t.out += u.output_tokens || 0;
   for (const t of order) for (const it of t.items) delete it.mid;
-  return { turns: order, steps, externalParents };
+  // 每条消息归哪一轮：别的会话从这里分叉时，父消息可能是这一轮里的任意一条（多半是回答）
+  const owned = new Map();
+  for (const r of msgs) {
+    const owner = turnOf(r.uuid);
+    if (typeof owner === 'string') owned.set(r.uuid, turns.get(owner));
+  }
+  return { turns: order, steps, externalParents, owned };
 }
 
 // ---------- 整个项目 ----------
@@ -379,18 +455,19 @@ export function parseProject(dir, options = {}) {
   const lanes = [];
   const turns = [];
   const allSteps = new Map(); // tool_use_id → { step, turn }
-  const uuidOwner = new Map(); // 原始 uuid → turn（跨会话分叉用）
+  const uuidOwner = new Map(); // 原始消息 uuid → 所在的轮（跨会话分叉用）
   let cwd = null;
+  hidden = 0;
 
   const addTurns = (res) => {
     for (const t of res.turns) {
       turns.push(t);
-      if (!uuidOwner.has(t.uuid)) uuidOwner.set(t.uuid, t);
       for (const it of t.items) if (it.k === 'tool') allSteps.set(it.id, { step: it, turn: t });
     }
+    for (const [uuid, t] of res.owned) if (!uuidOwner.has(uuid)) uuidOwner.set(uuid, t);
   };
   const laneBase = (res, title) => ({
-    title: title || res.turns[0].prompt.slice(0, 40),
+    title: title ? redact(title) : res.turns[0].prompt.slice(0, 40),
     start: res.turns[0].t0,
     end: res.turns.reduce((m, t) => (t.t1 > m ? t.t1 : m), ''),
     turnCount: res.turns.length,
@@ -462,7 +539,7 @@ export function parseProject(dir, options = {}) {
     const owner = uuidOwner.get(t.externalParent);
     if (owner && owner.lane !== t.lane) t.parent = owner.id;
   }
-  for (const t of turns) { delete t.externalParent; delete t.uuid; }
+  for (const t of turns) delete t.externalParent;
   for (const l of lanes) delete l.externalParents;
 
   lanes.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
@@ -481,6 +558,7 @@ export function parseProject(dir, options = {}) {
       turns: turns.filter((t) => sessionKeys.has(t.lane)).length,
       start: sessions[0]?.start || null,
       end: sessions.reduce((m, s) => (s.end > m ? s.end : m), ''),
+      redacted: hidden,
     },
     lanes,
     turns,

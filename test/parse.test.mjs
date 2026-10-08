@@ -3,20 +3,27 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseProject } from '../src/parse.mjs';
+import { parseProject, redact, HIDDEN } from '../src/parse.mjs';
 import { renderHtml } from '../src/render.mjs';
 import { toMarkdown } from '../src/export-md.mjs';
 
-// 构造一个最小的转录目录：一个会话、两轮提问（中间有一次压缩）、一个子代理
-function fixture() {
+// 记录构造器：时间戳全局递增，保证各会话先后有序
+let n = 0;
+const ts = () => new Date(Date.UTC(2026, 8, 1, 0, 0, n++)).toISOString();
+const usage = (i) => ({ input_tokens: i, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 10 });
+function builders(sid) {
+  const base = { sessionId: sid, cwd: 'E:\\demo', gitBranch: 'main' };
+  const user = (uuid, parentUuid, content, extra = {}) => ({ ...base, type: 'user', uuid, parentUuid, timestamp: ts(), message: { role: 'user', content }, ...extra });
+  const asst = (uuid, parentUuid, id, content, u = usage(10)) => ({ ...base, type: 'assistant', uuid, parentUuid, timestamp: ts(), message: { id, role: 'assistant', model: 'claude-opus-5-5', content, usage: u } });
+  return { base, user, asst };
+}
+const writeJsonl = (file, records) => fs.writeFileSync(file, records.map((r) => JSON.stringify(r)).join('\n'));
+
+// 构造一个最小的转录目录：一个会话、两轮提问（中间有一次压缩）、一个子代理；extra(dir) 可以再写别的会话
+function fixture(extra) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxtree-'));
   const sid = 's1';
-  let n = 0;
-  const ts = () => new Date(Date.UTC(2026, 8, 1, 0, 0, n++)).toISOString();
-  const base = { sessionId: sid, cwd: 'E:\demo', gitBranch: 'main' };
-  const user = (uuid, parentUuid, content, extra = {}) => ({ ...base, type: 'user', uuid, parentUuid, timestamp: ts(), message: { role: 'user', content }, ...extra });
-  const asst = (uuid, parentUuid, id, content, usage) => ({ ...base, type: 'assistant', uuid, parentUuid, timestamp: ts(), message: { id, role: 'assistant', model: 'claude-opus-5-5', content, usage } });
-  const usage = (i) => ({ input_tokens: i, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 10 });
+  const { base, user, asst } = builders(sid);
   const main = [
     { type: 'ai-title', sessionId: sid, aiTitle: '示例会话' },
     user('u1', null, '第一个问题 <b>&</b>'),
@@ -29,15 +36,16 @@ function fixture() {
     user('u2', 'sum', '第二个问题'),
     asst('a4', 'u2', 'm3', [{ type: 'text', text: '第二轮的回答' }], usage(80)),
   ];
-  fs.writeFileSync(path.join(dir, `${sid}.jsonl`), main.map((r) => JSON.stringify(r)).join('\n'));
+  writeJsonl(path.join(dir, `${sid}.jsonl`), main);
   const sub = path.join(dir, sid, 'subagents');
   fs.mkdirSync(sub, { recursive: true });
   const agent = [
     user('g1', null, '去查', { isSidechain: true }),
     asst('g2', 'g1', 'gm1', [{ type: 'text', text: '子代理的结论' }], usage(40)),
   ];
-  fs.writeFileSync(path.join(sub, 'agent-x1.jsonl'), agent.map((r) => JSON.stringify(r)).join('\n'));
+  writeJsonl(path.join(sub, 'agent-x1.jsonl'), agent);
   fs.writeFileSync(path.join(sub, 'agent-x1.meta.json'), JSON.stringify({ agentType: 'Explore', description: '查资料', toolUseId: 'tu1' }));
+  extra?.(dir);
   return dir;
 }
 
@@ -95,4 +103,91 @@ test('工具正文拆到 ctx-bulk 里，按偏移切出来和原文一致；页�
 test('Markdown 导出包含每一轮的提问和回答', () => {
   const md = toMarkdown(parseProject(fixture()));
   for (const s of ['第一个问题', '第一轮的回答', '第二轮的回答', '子代理的结论']) assert.ok(md.includes(s), s);
+});
+
+test('从别的会话分叉出来的会话接到父消息所在的那一轮，父消息是回答也行', () => {
+  const data = parseProject(fixture((dir) => {
+    const s2 = builders('s2');
+    writeJsonl(path.join(dir, 's2.jsonl'), [
+      s2.user('f1', 'a4', '换个思路'),
+      s2.asst('f2', 'f1', 'fm1', [{ type: 'text', text: '好' }]),
+    ]);
+    const s3 = builders('s3');
+    writeJsonl(path.join(dir, 's3.jsonl'), [s3.user('h1', 'u1', '从第一个问题重来')]);
+  }));
+  const first = (lane) => data.turns.find((t) => t.lane === lane);
+  assert.equal(first('s2').parent, 's1:u2');
+  assert.equal(first('s3').parent, 's1:u1');
+  assert.ok(!('uuid' in first('s2')) && !('externalParent' in first('s2')));
+});
+
+// 假密钥在运行时拼出来，源码里不出现完整的密钥形状
+const fake = (prefix, n) => prefix + 'Q7mZ2xK9pL4w'.repeat(Math.ceil(n / 12)).slice(0, n);
+const SK = fake('sk-', 48);
+const UUID = ['123e4567', 'e89b', '12d3', 'a456', '426614174000'].join('-');
+const pem = (edge) => `-----${edge} RSA PRIVATE KEY-----`;
+
+test('认得出常见密钥，普通标识符和文档里的示例占位不动', () => {
+  const hit = [
+    `key 是 ${SK}，别外传`,
+    `参考一下这个 ${fake('ak_', 64)} 做一款游戏`,
+    `stripe 用 ${fake('sk_live_', 24)}`,
+    `OPENAI_API_KEY=${SK}`,
+    `Authorization: Bearer ${fake('', 40)}`,
+    `postgres://app:${fake('', 20)}@db:5432/main`,
+    `{"api_key": "${fake('', 32)}"}`,
+    `DEEPSEEK_TOKEN: '${fake('', 24)}'`,
+    `const openaiApiKey = "${fake('', 32)}";`,
+    `npx some-cli --api-key ${fake('', 32)} --verbose`,
+    `DB_PASSWORD=${fake('', 10)}`,
+    `X-Api-Key: ${UUID}`,
+    `git clone https://${fake('ghp_', 36)}@github.com/a/b`,
+    fake('AKIA', 16).toUpperCase(),
+    `${pem('BEGIN')}\n${fake('', 64)}\n${pem('END')}`,
+  ];
+  for (const s of hit) {
+    const out = redact(s);
+    assert.equal(out.split(HIDDEN).length - 1, 1, s.slice(0, 24));
+    assert.ok(!/Q7mZ2x|Q7MZ2X|426614174000/.test(out), s.slice(0, 24));
+  }
+  const keep = [
+    'sk-fragment-cache-v1',
+    '<task-notification> 和 risk-assessment-report',
+    'max_tokens: 4096, tokens=128000',
+    'password = hash_password(raw_password)',
+    'postgres://user:password@localhost/db',
+    'postgresql://postgres:postgres@localhost:5432/app',
+    'API_KEY=$OPENAI_API_KEY',
+    'Bearer token 要放在 Authorization 头里',
+    "const LOCAL_REVIEW_STORAGE_KEY = 'gamenet2-review-v1';",
+    'TLS_CERTIFICATE_KEY=\n./certs/dev-key.pem',
+    'PWD=/c/Users/demo/project2',
+    'secretAccessKey: options.uploadS3SecretAccessKey,',
+    `public_key=${fake('', 32)}`,
+  ];
+  for (const s of keep) assert.equal(redact(s), s);
+});
+
+test('导出的 JSON、HTML、Markdown 里都不留密钥，截断处的密钥也不留半截', () => {
+  const data = parseProject(fixture((dir) => {
+    const { user, asst } = builders('s4');
+    writeJsonl(path.join(dir, 's4.jsonl'), [
+      user('k1', null, `帮我配上 ${SK}`),
+      asst('k2', 'k1', 'km1', [
+        { type: 'thinking', thinking: `用户贴了 ${SK}`, signature: 'x' },
+        { type: 'text', text: `已写入，${SK} 别外传` },
+        { type: 'tool_use', id: 'kt1', name: 'Bash', input: { command: `cd app\nOPENAI_API_KEY=${SK} npm start` } },
+      ]),
+      // 密钥正好跨在默认的 4000 字截断处
+      user('k3', 'k2', [{ type: 'tool_result', tool_use_id: 'kt1', content: `${'x'.repeat(3990)} ${SK} 后面还有` }]),
+    ]);
+  }));
+  assert.equal(data.stats.redacted, 5);
+  const step = data.turns.find((t) => t.lane === 's4').items.find((i) => i.k === 'tool');
+  assert.equal(step.sum, 'cd app');
+  assert.ok(step.input.includes(`OPENAI_API_KEY=${HIDDEN}`));
+  assert.ok(step.result.includes(HIDDEN) && step.result.includes('原长 4047 字符'));
+  for (const out of [JSON.stringify(data), renderHtml(structuredClone(data)), toMarkdown(data, { thinking: true })]) {
+    assert.ok(!out.includes(SK.slice(0, 9)));
+  }
 });

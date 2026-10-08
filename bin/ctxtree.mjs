@@ -69,6 +69,8 @@ function exportOne(dir, htmlFile, args) {
 
 const safeName = (s) => s.replace(/[<>:"/\\|?*\s]+/g, '_');
 
+const hiddenNote = (data, sep = '，') => (data.stats.redacted ? `${sep}隐藏了 ${data.stats.redacted} 处密钥` : '');
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { console.log(HELP); return; }
@@ -89,7 +91,7 @@ function main() {
       const { data } = exportOne(p.dir, file, args);
       if (!data.turns.length) { fs.rmSync(file); continue; }
       entries.push({ href: path.basename(file), name: data.project.name, cwd: data.project.cwd, sessions: data.stats.sessions, turns: data.stats.turns, end: data.stats.end });
-      console.log(`✓ ${data.project.name.padEnd(28)} ${data.stats.sessions} 个会话 ${data.stats.turns} 轮  ${size(file)}`);
+      console.log(`✓ ${data.project.name.padEnd(28)} ${data.stats.sessions} 个会话 ${data.stats.turns} 轮  ${size(file)}${hiddenNote(data, '  ')}`);
     }
     const index = path.join(outDir, 'index.html');
     fs.writeFileSync(index, renderIndex(entries));
@@ -104,7 +106,7 @@ function main() {
   const out = path.resolve(args.out || path.join('out', `${safeName(guessName)}.html`));
   const { data, written } = exportOne(dir, out, args);
   console.log(`项目 ${data.project.name}（${data.project.cwd || dir}）`);
-  console.log(`  ${data.stats.sessions} 个会话，${data.stats.turns} 轮对话，${data.stats.agents} 个子代理，用时 ${Date.now() - t0} ms`);
+  console.log(`  ${data.stats.sessions} 个会话，${data.stats.turns} 轮对话，${data.stats.agents} 个子代理，用时 ${Date.now() - t0} ms${hiddenNote(data)}`);
   for (const f of written) console.log(`  → ${f}  ${size(f)}`);
   if (args.open) openInBrowser(out);
 }
