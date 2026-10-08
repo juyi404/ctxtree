@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseProject, redact, HIDDEN } from '../src/parse.mjs';
-import { renderHtml } from '../src/render.mjs';
+import { renderHtml, renderIndex } from '../src/render.mjs';
 import { toMarkdown } from '../src/export-md.mjs';
 
 // 记录构造器：时间戳全局递增，保证各会话先后有序
@@ -103,6 +104,43 @@ test('工具正文拆到 ctx-bulk 里，按偏移切出来和原文一致；页�
 test('Markdown 导出包含每一轮的提问和回答', () => {
   const md = toMarkdown(parseProject(fixture()));
   for (const s of ['第一个问题', '第一轮的回答', '第二轮的回答', '子代理的结论']) assert.ok(md.includes(s), s);
+});
+
+const mainScript = (html) => html.match(/<script>([\s\S]*?)<\/script>/)[1];
+
+test('页面带 CSP：只放行自己那一段主脚本，不许外链和联网', () => {
+  const html = renderHtml(parseProject(fixture()));
+  const csp = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/)[1];
+  assert.ok(csp.includes("default-src 'none'") && !csp.includes('unsafe-eval'));
+  assert.equal(html.match(/<script>/g).length, 1);
+  assert.ok(!/<script[^>]*\ssrc=/i.test(html));
+  const hash = crypto.createHash('sha256').update(mainScript(html), 'utf8').digest('base64');
+  assert.ok(csp.includes(`script-src 'sha256-${hash}'`));
+  // 页面按这串占位画「密钥已隐藏」标签，要和 parse.mjs 一致
+  assert.ok(mainScript(html).includes(`const HIDDEN = '${HIDDEN}'`));
+});
+
+test('回复里的链接只放行 http(s)、mailto 和锚点，属性闭合不了', () => {
+  const main = mainScript(renderHtml(parseProject(fixture())));
+  const pick = (re) => main.match(re)[0];
+  const lib = [/^const esc = .*$/m, /^const HIDDEN = .*$/m, /^const chipHidden = .*$/m, /^function inline\(s\) \{[\s\S]*?^\}$/m].map(pick).join('\n');
+  const { inline, chipHidden } = new Function(`${lib}\nreturn { inline, chipHidden };`)();
+  const ctrl = String.fromCharCode(1);
+  for (const s of ['[a](javascript:alert(1))', `[a](${ctrl}javascript:alert(1))`, '[a](JavaScript:x)', '[a](data:text/html,x)', '[a](//evil.example)', '[a](vbscript:x)']) {
+    assert.ok(!inline(s).includes('<a '), s);
+  }
+  assert.equal(inline('[a](https://x.example/?p=1&q=2)'), '<a href="https://x.example/?p=1&amp;q=2" target="_blank" rel="noopener noreferrer">a</a>');
+  assert.equal(inline('[a](https://x.example/"onmouseover=alert(1))'), '<a href="https://x.example/&quot;onmouseover=alert(1" target="_blank" rel="noopener noreferrer">a</a>)');
+  assert.equal(inline('[foo.ts](src/foo.ts:42)'), '<span class="lk" title="src/foo.ts:42">foo.ts</span>');
+  assert.ok(!/href="[^"]*<code/.test(inline('[a](`x`) 和 [b](https://x.example/`y`)')));
+  assert.equal(chipHidden(`key=${HIDDEN}`), 'key=<i class=rd>密钥已隐藏</i>');
+});
+
+test('总目录转义项目名和路径，没有脚本', () => {
+  const html = renderIndex([{ href: 'a"b.html', name: '<img src=x onerror=alert(1)>', cwd: 'E:/x', sessions: '3', turns: 'oops', end: '2026-09-01T00:00:00Z', redacted: 2 }]);
+  assert.ok(!html.includes('<img') && !html.includes('a"b'));
+  assert.ok(!/<script/i.test(html) && html.includes("default-src 'none'"));
+  assert.ok(html.includes('<b>3</b>个会话') && html.includes('<b>0</b>轮对话') && html.includes('隐藏<b>2</b>处密钥'));
 });
 
 test('从别的会话分叉出来的会话接到父消息所在的那一轮，父消息是回答也行', () => {

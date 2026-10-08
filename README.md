@@ -38,6 +38,13 @@ node bin/ctxtree.mjs all --open
 - 放过的：`$VAR`、`<your-key>` 这类占位，路径，代码里的属性引用，`public_key`，以及 `sk-fragment-cache-v1` 这种不像随机串的标识符。
 - 按规则识别，不保证一个不漏；不认识格式的密钥（比如纯数字、很短的口令）可能留在页面里，外发前自己再看一眼。
 - 只处理导出的文件。`~/.claude/projects/` 下的原始转录和项目里的配置文件不会动，密钥还在那里。
+- 页面里被隐藏的位置显示成绿色的「密钥已隐藏」标签；顶栏和总目录会标出隐藏了几处。
+
+页面本身也收紧了：
+
+- 带内容安全策略（CSP）：只允许执行页面自带的那一段脚本（按哈希放行），不加载任何外部脚本、样式、字体、图片，也不发网络请求。转录里混进的 HTML 就算没被转义也执行不了。
+- 回复里的 Markdown 链接只有 `http(s)://`、`mailto:` 和页内锚点会变成可点的链接，在新标签页打开且不带来源页地址；`javascript:`、`file:`、相对路径之类只显示文字，地址放在悬停提示里。
+- 总目录 `index.html` 是纯静态页，没有脚本。
 
 仓库本身也有一道检查：`.githooks/` 里的提交前、推送前钩子用同一套规则扫新增的内容，发现密钥就拒绝提交或推送，只打印文件、行号和脱敏后的那一行。克隆下来后执行一次 `npm install`（或 `git config core.hooksPath .githooks`）启用；`npm run secrets` 扫全部历史。`.env`、`*.pem`、`*.key`、`.claude/settings.local.json` 已经在 `.gitignore` 里。
 
@@ -55,7 +62,7 @@ node bin/ctxtree.mjs all --open
 ## 结构
 
 - `src/parse.mjs`：读取转录，切分轮次，接上压缩、分叉和子代理。
-- `src/template.html`：查看器页面，数据以 JSON 内嵌。
+- `src/template.html`：查看器页面，数据以 JSON 内嵌。CSP 按主脚本的哈希放行，所以页面里不能写内联事件（`onclick=`）、`eval` 或第二段 `<script>`，事件一律在主脚本里绑定。
 - `src/export-md.mjs`：Markdown 导出，CLI 和页面共用同一份代码。
 - `src/render.mjs`：把数据和导出代码塞进模板；工具输入输出单独放进一个 `ctx-bulk` 块，展开时才解析。
 - `bench/stress.mjs`：压力测试页。

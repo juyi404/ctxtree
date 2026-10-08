@@ -19,7 +19,7 @@ lanes.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
 const data = {
   ...base, turns, lanes,
   project: { ...base.project, name: `压力测试 ×${copies}` },
-  stats: { ...base.stats, sessions: lanes.filter((l) => l.kind === 'session').length, agents: lanes.filter((l) => l.kind === 'agent').length, turns: turns.length },
+  stats: { ...base.stats, sessions: lanes.filter((l) => l.kind === 'session').length, agents: lanes.filter((l) => l.kind === 'agent').length, turns: turns.length, redacted: (base.stats.redacted || 0) * Number(copies) },
 };
 const out = path.resolve('out/stress.html');
 fs.writeFileSync(out, renderHtml(data));

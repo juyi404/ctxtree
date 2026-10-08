@@ -2,48 +2,84 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="__CSP__">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
+<link rel="icon" href="__ICON__">
 <style>
 :root {
   --paper: #EEF1F0;
+  --paper-2: #F5F7F6;
   --card: #FFFFFF;
   --ink: #17202B;
   --ink-2: #4E5B68;
   --ink-3: #8A96A2;
-  --rule: #D3DAD8;
+  --rule: #DCE2E0;
+  --rule-2: #C4CDCA;
   --agent: #8F9AA6;
   --hit: #F2B705;
+  --bad: #C23B22;
+  --bad-bg: #FCEDEA;
+  --ok: #0F7B6C;
+  --ok-bg: #E2F2EE;
+  --link: #1B6FB0;
+  --float: 0 1px 2px rgba(23, 32, 43, .05), 0 8px 24px -10px rgba(23, 32, 43, .2);
+  --pop: 0 2px 6px rgba(23, 32, 43, .06), 0 20px 48px -14px rgba(23, 32, 43, .3);
   --sign: "Bahnschrift", "DIN Alternate", "Barlow", "Roboto Condensed", "Segoe UI", sans-serif;
   --body: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --mono: "Cascadia Code", "JetBrains Mono", Consolas, "Microsoft YaHei UI", monospace;
 }
-* { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font: 14px/1.5 var(--body); overflow: hidden; }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #C3CCC9 transparent; }
+html, body { margin: 0; height: 100%; color: var(--ink); font: 14px/1.5 var(--body); overflow: hidden; }
+/* 背景只画一次：画布是单独的合成层，平移时不会重绘它 */
+body { background: radial-gradient(1400px 700px at 72% -20%, #F7F9F8, rgba(247, 249, 248, 0) 70%), var(--paper); }
 button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
+[hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+::selection { background: #FFE38A; color: var(--ink); }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+kbd { display: inline-block; min-width: 20px; padding: 3px 5px; font: 600 11px/1 var(--sign); text-align: center; color: var(--ink-2); background: var(--card); border: 1px solid var(--rule-2); border-bottom-width: 2px; border-radius: 5px; }
 
 /* 顶栏 */
-.top { position: fixed; inset: 0 0 auto 0; height: 56px; display: flex; align-items: center; gap: 18px; padding: 0 16px 0 20px; background: var(--paper); border-bottom: 1px solid var(--rule); z-index: 20; }
-.top h1 { margin: 0; font: 600 22px/1 var(--sign); letter-spacing: .01em; white-space: nowrap; }
-.top h1 small { font: 400 13px/1 var(--body); color: var(--ink-2); margin-left: 10px; letter-spacing: 0; }
-.stats { display: flex; gap: 14px; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
-.stats b { font: 600 15px/1 var(--sign); color: var(--ink); margin-right: 3px; }
+.top { position: fixed; inset: 0 0 auto 0; height: 56px; display: flex; align-items: center; gap: 14px; padding: 0 14px 0 16px; background: var(--card); border-bottom: 1px solid var(--rule); z-index: 20; }
+.brand { flex: none; width: 30px; height: 30px; border-radius: 9px; background: var(--ink); display: grid; place-items: center; }
+.brand svg { width: 20px; height: 20px; display: block; }
+.top h1 { margin: 0; display: flex; align-items: center; gap: 9px; min-width: 0; font: 600 19px/1 var(--sign); letter-spacing: .01em; white-space: nowrap; }
+.top h1 small { font: 500 11.5px/1 var(--body); color: var(--ink-3); letter-spacing: .06em; padding: 4px 7px; border: 1px solid var(--rule); border-radius: 6px; }
+.stats { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+.stats > span { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 9px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; }
+.stats b { font: 600 14px/1 var(--sign); color: var(--ink); }
+.stats .range { background: none; border-color: transparent; color: var(--ink-3); padding: 0 2px; }
+.stats .safe { color: var(--ok); background: var(--ok-bg); border-color: #C3E4DB; }
+.stats .safe b { color: var(--ok); }
+.stats .safe svg.i { width: 13px; height: 13px; }
 .spacer { flex: 1; }
-.search { display: flex; align-items: center; height: 34px; border: 1px solid var(--rule); background: var(--card); border-radius: 17px; padding: 0 6px 0 14px; width: min(340px, 30vw); }
-.search input { border: 0; outline: 0; background: none; flex: 1; min-width: 0; }
-.search .count { font: 12px var(--sign); color: var(--ink-3); padding: 0 6px; white-space: nowrap; }
-.tbtn { height: 34px; padding: 0 12px; border: 1px solid var(--rule); background: var(--card); border-radius: 6px; white-space: nowrap; }
-.tbtn:hover { border-color: var(--ink-2); }
-.tbtn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-.group { display: flex; gap: 6px; }
+.search { display: flex; align-items: center; gap: 8px; height: 36px; width: min(320px, 26vw); padding: 0 8px 0 11px; color: var(--ink-3); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; cursor: text; }
+.search:focus-within { background: var(--card); border-color: var(--ink-2); box-shadow: 0 0 0 3px rgba(23, 32, 43, .08); }
+.search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--ink); }
+.search input::placeholder { color: var(--ink-3); }
+.search .count { font: 12px var(--sign); color: var(--ink-2); white-space: nowrap; }
+.search .count:empty { display: none; }
+.search:focus-within kbd, .search input:not(:placeholder-shown) ~ kbd { display: none; }
+.tbtn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 13px; border: 1px solid var(--rule); background: var(--card); border-radius: 10px; white-space: nowrap; color: var(--ink-2); font-weight: 500; }
+.tbtn:hover { border-color: var(--rule-2); color: var(--ink); }
+/* 开关组：圆点实心表示打开 */
+.group { display: flex; gap: 2px; padding: 3px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 11px; }
+.group .tbtn { height: 28px; padding: 0 10px 0 9px; border: 0; background: none; border-radius: 8px; font-size: 13px; }
+.group .tbtn::before { content: ""; width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+.group .tbtn:hover { background: rgba(23, 32, 43, .05); }
+.group .tbtn[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(23, 32, 43, .1), 0 0 0 1px rgba(23, 32, 43, .06); }
+.group .tbtn[aria-pressed="true"]::before { background: #2A9D5C; box-shadow: none; }
+.tbtn.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+.tbtn.primary:hover { background: #2A3644; color: #fff; }
 .menu { position: relative; }
-.menu-list { position: absolute; right: 0; top: 40px; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 6px; min-width: 230px; display: none; box-shadow: 0 8px 24px rgba(23, 32, 43, .12); }
+.menu.open .tbtn svg { transform: rotate(180deg); }
+.menu-list { position: absolute; right: 0; top: 44px; min-width: 268px; padding: 6px; display: none; background: var(--card); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--pop); }
 .menu.open .menu-list { display: block; }
-.menu-list button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 4px; }
-.menu-list button:hover { background: var(--paper); }
-.menu-list button span { display: block; font-size: 12px; color: var(--ink-3); }
+.menu-list button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 9px 12px; border-radius: 8px; font-weight: 500; }
+.menu-list button:hover { background: var(--paper-2); }
+.menu-list button span { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--ink-3); }
 
 /* 画布 */
 #vp { position: fixed; inset: 56px 0 0 0; overflow: hidden; cursor: grab; touch-action: none; }
@@ -52,146 +88,194 @@ button { cursor: pointer; }
 #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; contain: size layout style; user-select: none; -webkit-user-select: none; }
 #world svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 
-.terminus { position: absolute; width: 214px; padding: 14px 16px; background: var(--ink); color: var(--paper); border-radius: 8px; }
+.terminus { position: absolute; width: 214px; padding: 13px 16px 15px; background: var(--ink); color: #fff; border-radius: 14px; box-shadow: 0 10px 24px -12px rgba(23, 32, 43, .5); }
+.terminus::before { content: "项目起点"; display: block; margin-bottom: 8px; font: 600 10.5px/1 var(--body); letter-spacing: .16em; color: rgba(255, 255, 255, .5); }
 .terminus .name { font: 600 26px/1.1 var(--sign); overflow-wrap: anywhere; }
 .terminus .name.long { font-size: 19px; }
-.terminus .path { font: 11.5px/1.4 var(--mono); opacity: .7; margin-top: 6px; word-break: break-all; }
+.terminus .path { margin-top: 9px; padding-top: 9px; border-top: 1px solid rgba(255, 255, 255, .12); font: 11px/1.45 var(--mono); color: rgba(255, 255, 255, .6); word-break: break-all; }
 
 .badge { position: absolute; display: flex; align-items: center; gap: 8px; height: 24px; white-space: nowrap; pointer-events: auto; cursor: pointer; }
-.badge .no { font: 600 13px/24px var(--sign); color: #fff; background: var(--c); min-width: 34px; padding: 0 7px; text-align: center; border-radius: 12px; }
+.badge .no { font: 600 12.5px/24px var(--sign); color: #fff; background: var(--c); min-width: 36px; padding: 0 8px; text-align: center; border-radius: 7px; letter-spacing: .02em; }
 .badge.agent .no { background: var(--card); color: var(--ink-2); border: 1.5px dashed var(--agent); line-height: 21px; }
 .badge .t { font-weight: 600; font-size: 13px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
 .badge .d { font: 12px var(--sign); color: var(--ink-3); }
+.badge:hover .t { text-decoration: underline; text-underline-offset: 3px; }
 
-.card { position: absolute; width: 280px; height: 150px; padding: 10px 12px 9px; background: var(--card); border: 1px solid var(--rule); border-top: 3px solid var(--c); border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; gap: 5px; overflow: hidden; contain: strict; }
+/* 卡片：顶上的色条用内阴影画，不占布局；阴影只留一层小模糊，几百张一起栅格化也不贵 */
+.card { position: absolute; width: 280px; height: 150px; padding: 11px 13px 9px; background: var(--card); border: 1px solid #DDE3E1; border-radius: 10px; box-shadow: inset 0 3px 0 var(--c), 0 1px 2px rgba(23, 32, 43, .07); cursor: pointer; display: flex; flex-direction: column; gap: 5px; overflow: hidden; contain: strict; }
 .card.enter { animation: card-in .22s ease-out; }
 /* 缩得很小时卡片只画外框和骨架条：这时文字本来就看不清，省掉的文字排版是平移掉帧的大头 */
 .card.shell > * { display: none; }
-.card.shell { background: linear-gradient(var(--paper) 0 0) 12px 14px / 34% 12px no-repeat, linear-gradient(var(--paper) 0 0) 12px 40px / 88% 16px no-repeat, linear-gradient(var(--paper) 0 0) 12px 70px / 72% 12px no-repeat, linear-gradient(var(--paper) 0 0) 12px 90px / 80% 12px no-repeat, var(--card); }
+.card.shell { background: linear-gradient(#EAEEED 0 0) 13px 15px / 22% 13px no-repeat, linear-gradient(#EAEEED 0 0) 13px 42px / 88% 12px no-repeat, linear-gradient(#EAEEED 0 0) 13px 60px / 64% 12px no-repeat, linear-gradient(#F1F4F3 0 0) 13px 86px / 82% 10px no-repeat, linear-gradient(#F1F4F3 0 0) 13px 103px / 58% 10px no-repeat, linear-gradient(#F1F4F3 0 0) 13px 126px / 30% 12px no-repeat, var(--card); }
 @keyframes card-in { from { opacity: 0; transform: translateY(-8px); } }
-.card.agent { border-top-style: dashed; border-top-color: var(--agent); }
+/* 子代理：色条换成虚线 */
+.card.agent { box-shadow: 0 1px 2px rgba(23, 32, 43, .07); }
+.card.agent::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: repeating-linear-gradient(90deg, var(--c) 0 8px, transparent 8px 14px); opacity: .65; }
 #vp.dragging .card, #vp.dragging .badge { cursor: grabbing; }
-.card:hover { border-color: var(--ink-2); border-top-color: var(--c); }
-.card.agent:hover { border-top-color: var(--agent); }
-.card.sel { outline: 2px solid var(--ink); outline-offset: 1px; }
-.card.hit { box-shadow: 0 0 0 3px var(--hit); }
+.card:hover { border-color: var(--rule-2); }
+.card.sel { outline: 2.5px solid var(--c); outline-offset: 2px; }
+.card.hit { box-shadow: inset 0 3px 0 var(--c), 0 0 0 3px var(--hit); }
+.card.agent.hit { box-shadow: 0 0 0 3px var(--hit); }
 .card.dim { opacity: .28; }
-.card .meta { display: flex; align-items: baseline; gap: 8px; font: 12px/1 var(--sign); color: var(--ink-3); }
-.card .idx { font-size: 16px; font-weight: 600; color: var(--ink); }
-.card .ctx { margin-left: auto; display: flex; align-items: center; gap: 5px; }
-.card .ctx i { display: block; width: 36px; height: 4px; background: var(--paper); border-radius: 2px; overflow: hidden; }
-.card .ctx i::before { content: ""; display: block; height: 100%; width: var(--p); background: var(--ink-2); }
-.card .ctx.hot i::before { background: #C8412B; }
-.card .q { font-size: 13px; font-weight: 600; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
-.card .a { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; flex: 1; }
+.card .meta { flex: none; display: flex; align-items: center; gap: 8px; height: 18px; font: 12px/1 var(--sign); color: var(--ink-3); }
+.card .idx { min-width: 24px; padding: 0 6px; font: 600 12.5px/18px var(--sign); text-align: center; border-radius: 5px; color: color-mix(in srgb, var(--c) 80%, #000); background: color-mix(in srgb, var(--c) 13%, #fff); }
+.card.agent .idx { color: var(--ink-2); background: var(--paper-2); }
+.card .ctx { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 11.5px; }
+.card .ctx i { display: block; width: 38px; height: 5px; background: #E8ECEB; border-radius: 3px; overflow: hidden; }
+.card .ctx i::before { content: ""; display: block; height: 100%; width: var(--p); background: #6B7884; border-radius: 3px; }
+.card .ctx.hot { color: var(--bad); }
+.card .ctx.hot i::before { background: #D64532; }
+.card .q { flex: none; font-size: 13px; font-weight: 600; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+/* 卡片高度固定：提问占两行时回复只露两行，提问一行就露三行（.q1 由脚本估算） */
+.card .a { flex: 1; min-height: 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.card.q1 .a { -webkit-line-clamp: 3; }
 .card .a:empty::before { content: "（本轮没有文字回复）"; color: var(--ink-3); }
-.card .foot { display: flex; gap: 10px; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
-.card .foot .warn { color: #B4441F; }
-.card .agt { border: 1px dashed var(--agent); background: var(--card); border-radius: 3px; padding: 0 6px; font-size: 11.5px; line-height: 17px; color: var(--ink-2); }
-.card .agt:hover, .card .agt[aria-expanded="true"] { border-color: var(--ink-2); color: var(--ink); }
+.card .foot { flex: none; display: flex; gap: 5px; height: 18px; font-size: 11px; color: var(--ink-2); white-space: nowrap; overflow: hidden; }
+.card .foot > * { flex: none; height: 18px; line-height: 18px; padding: 0 7px; border-radius: 5px; background: var(--paper-2); }
+.card .foot .warn { color: var(--bad); background: var(--bad-bg); }
+.card .agt { border: 1px dashed var(--agent); background: var(--card); line-height: 16px; font-size: 11px; color: var(--ink-2); }
+.card .agt:hover, .card .agt[aria-expanded="true"] { border-color: var(--ink-2); border-style: solid; color: var(--ink); }
+.card .rd { padding: 0 5px; font-size: 11px; line-height: 16px; vertical-align: 0; }
 
-/* 线路面板 */
-.lines { position: fixed; left: 12px; top: 68px; width: 272px; max-height: calc(100vh - 250px); overflow: auto; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; z-index: 10; padding: 6px; }
-.lines[hidden] { display: none; }
-.lines .row { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; padding: 7px 8px; border-radius: 4px; cursor: pointer; border: 0; background: none; width: 100%; text-align: left; }
-.lines .row:hover { background: var(--paper); }
-.lines .no { font: 600 12px/22px var(--sign); color: #fff; background: var(--c); min-width: 32px; text-align: center; border-radius: 11px; grid-row: span 2; }
+/* 线路面板、缩略图、缩放：浮在画布上的面板统一圆角加浅阴影 */
+.lines { position: fixed; left: 12px; top: 68px; width: 272px; max-height: calc(100vh - 252px); overflow: auto; padding: 0 6px 6px; background: var(--card); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--float); z-index: 10; }
+.lines .lh { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 12px 8px 8px; background: var(--card); font: 600 12px/1 var(--body); letter-spacing: .1em; color: var(--ink-3); }
+.lines .lh b { padding: 3px 7px; border-radius: 6px; background: var(--paper-2); font: 600 12px/1 var(--sign); letter-spacing: 0; color: var(--ink-2); }
+.lines .row { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; width: 100%; padding: 8px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
+.lines .row:hover { background: var(--paper-2); }
+.lines .no { grid-row: span 2; min-width: 34px; padding: 0 6px; font: 600 12px/22px var(--sign); text-align: center; color: #fff; background: var(--c); border-radius: 6px; }
 .lines .t { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lines .d { font: 11.5px var(--sign); color: var(--ink-3); }
 
-/* 缩略图 */
-#mini { position: fixed; left: 12px; bottom: 12px; width: 272px; height: 150px; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; z-index: 10; cursor: crosshair; }
-.hint { position: fixed; right: 16px; bottom: 12px; font-size: 12px; color: var(--ink-3); z-index: 5; pointer-events: none; }
-.zoom { position: fixed; right: 16px; bottom: 36px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
-.zoom button { width: 34px; height: 34px; border: 1px solid var(--rule); background: var(--card); border-radius: 6px; font: 600 16px/1 var(--sign); }
+#mini { position: fixed; left: 12px; bottom: 12px; width: 272px; height: 150px; background: var(--card); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--float); z-index: 10; cursor: crosshair; }
+.zoom { position: fixed; right: 16px; bottom: 42px; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: var(--card); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--float); z-index: 5; }
+.zoom button { display: grid; place-items: center; width: 32px; height: 32px; border: 0; background: none; border-radius: 8px; color: var(--ink-2); }
+.zoom button:hover { background: var(--paper-2); color: var(--ink); }
+.zoom hr { width: 20px; margin: 2px auto; border: 0; border-top: 1px solid var(--rule); }
+.hint { position: fixed; right: 16px; bottom: 12px; display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-3); white-space: nowrap; z-index: 5; pointer-events: none; }
+.hint kbd { padding: 2px 5px; min-width: 18px; font-size: 10.5px; color: var(--ink-3); border-color: var(--rule); }
+.hint i { width: 3px; height: 3px; margin: 0 5px; border-radius: 50%; background: var(--rule-2); }
 
 /* 详情抽屉 */
-.drawer { position: fixed; top: 56px; right: 0; bottom: 0; width: min(640px, 100vw); background: var(--card); border-left: 1px solid var(--rule); z-index: 15; display: flex; flex-direction: column; transform: translateX(100%); transition: transform .18s ease-out; }
-.drawer.open { transform: none; }
-.dh { padding: 14px 20px 12px; border-bottom: 1px solid var(--rule); }
-.dh .l1 { display: flex; align-items: center; gap: 10px; }
-.dh .l1 .no { font: 600 13px/24px var(--sign); color: #fff; background: var(--c); min-width: 34px; padding: 0 7px; text-align: center; border-radius: 12px; }
-.dh .l1 .no.agent { background: var(--card); color: var(--ink-2); border: 1.5px dashed var(--agent); line-height: 21px; }
-.dh .l1 .lt { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.dh .l1 button { border: 1px solid var(--rule); background: var(--card); border-radius: 5px; height: 30px; min-width: 30px; padding: 0 8px; }
+.drawer { position: fixed; top: 56px; right: 0; bottom: 0; width: min(640px, 100vw); display: flex; flex-direction: column; background: var(--card); border-left: 1px solid var(--rule); box-shadow: -20px 0 44px -28px rgba(23, 32, 43, .4); z-index: 15; transform: translateX(100%); visibility: hidden; transition: transform .2s cubic-bezier(.2, .8, .2, 1), visibility 0s .2s; }
+.drawer.open { transform: none; visibility: visible; transition: transform .2s cubic-bezier(.2, .8, .2, 1); }
+.dh { padding: 16px 20px 14px; border-bottom: 1px solid var(--rule); background: linear-gradient(color-mix(in srgb, var(--c) 7%, #fff), #fff); box-shadow: inset 0 4px 0 var(--c); }
+.dh .l1 { display: flex; align-items: center; gap: 8px; }
+.dh .l1 .no { min-width: 38px; padding: 0 8px; font: 600 13px/26px var(--sign); text-align: center; color: #fff; background: var(--c); border-radius: 7px; }
+.dh .l1 .no.agent { color: var(--ink-2); background: var(--card); border: 1.5px dashed var(--agent); line-height: 23px; }
+.dh .l1 .lt { flex: 1; margin-left: 2px; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dh .l1 button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 30px; min-width: 30px; padding: 0 8px; border: 1px solid var(--rule); background: var(--card); border-radius: 8px; color: var(--ink-2); font-size: 13px; }
+.dh .l1 button:not(:disabled):hover { border-color: var(--rule-2); color: var(--ink); }
 .dh .l1 button:disabled { opacity: .35; cursor: default; }
-.dh .l2 { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 12.5px; color: var(--ink-2); }
-.dh .l2 b { font: 600 17px/1 var(--sign); color: var(--ink); margin-right: 2px; }
-.dh .l2 .k { color: var(--ink-3); margin-right: 4px; }
-.db { flex: 1; overflow: auto; padding: 18px 22px 40px; }
-.df { padding: 10px 20px; border-top: 1px solid var(--rule); display: flex; gap: 8px; flex-wrap: wrap; }
-.df button { border: 1px solid var(--rule); background: var(--card); border-radius: 5px; height: 32px; padding: 0 12px; }
-.df button:hover, .dh .l1 button:not(:disabled):hover { border-color: var(--ink-2); }
+.dh .l2 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.dh .st { display: flex; flex-direction: column; gap: 4px; min-width: 74px; padding: 7px 11px 8px; background: rgba(255, 255, 255, .85); border: 1px solid var(--rule); border-radius: 9px; }
+.dh .st { max-width: 100%; }
+.dh .st .k { font-size: 11px; line-height: 1; color: var(--ink-3); }
+.dh .st .v { font: 500 13px/1.2 var(--sign); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dh .st .v b { font-size: 17px; font-weight: 600; }
+.db { flex: 1; overflow: auto; padding: 20px 24px 48px; }
+.df { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--rule); }
+.df button { height: 34px; padding: 0 14px; border: 1px solid var(--rule); background: var(--card); border-radius: 9px; font-weight: 500; }
+.df button:hover { border-color: var(--rule-2); }
+.df button:first-child { background: var(--ink); border-color: var(--ink); color: #fff; }
+.df button:first-child:hover { background: #2A3644; }
 
-.who { font: 600 12px var(--sign); color: var(--ink-3); margin: 18px 0 6px; letter-spacing: .02em; }
+/* 「你」用线路色的站点圈，Claude 用橙色圆点 */
+.who { display: flex; align-items: center; gap: 8px; margin: 22px 0 10px; font: 600 12.5px/1 var(--body); color: var(--ink-2); }
 .who:first-child { margin-top: 0; }
-.prompt { background: var(--paper); border-left: 3px solid var(--c); padding: 10px 14px; border-radius: 0 4px 4px 0; white-space: pre-wrap; word-break: break-word; font-size: 14px; max-width: 72ch; }
-.prompt.queued { border-left-style: dashed; font-size: 13.5px; margin: 10px 0; }
-.prompt.queued::before { content: "中途插话"; display: block; font-size: 11.5px; color: var(--ink-3); margin-bottom: 2px; }
+.who::before { content: ""; flex: none; width: 20px; height: 20px; border-radius: 50%; }
+.who.you::before { background: #fff; box-shadow: inset 0 0 0 5px var(--c); }
+.who.ai::before { content: "C"; display: grid; place-items: center; font: 600 11px/1 var(--sign); color: #fff; background: #D97757; }
+.prompt { max-width: 72ch; padding: 11px 15px; white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.65; background: color-mix(in srgb, var(--c) 7%, #fff); border: 1px solid color-mix(in srgb, var(--c) 24%, #fff); border-radius: 4px 14px 14px 14px; }
+.prompt.queued { margin: 12px 0; font-size: 13.5px; background: var(--paper-2); border: 1px dashed var(--rule-2); }
+.prompt.queued::before { content: "中途插话"; display: block; margin-bottom: 6px; font: 600 11px/1 var(--body); letter-spacing: .08em; color: var(--ink-3); }
 /* 长回复里屏幕外的段落先不排版（中文字形回退排版很贵，一轮几千字能占十几毫秒），滚到时再排 */
 #dBody .md > *, #dBody > :not(.md) { content-visibility: auto; contain-intrinsic-size: auto 48px; }
-.md { max-width: 72ch; font-size: 14.5px; line-height: 1.72; word-break: break-word; margin: 6px 0 12px; }
-.md p { margin: 0 0 .75em; }
-.md h1, .md h2, .md h3, .md h4 { font-size: 15.5px; margin: 1.1em 0 .4em; line-height: 1.4; }
-.md h1 { font-size: 17.5px; } .md h2 { font-size: 16.5px; }
-.md ul, .md ol { margin: 0 0 .75em; padding-left: 1.4em; }
-.md li { margin: .15em 0; }
-.md code { font: 12.5px var(--mono); background: var(--paper); padding: 1px 5px; border-radius: 3px; }
-.md pre { background: #1E2833; color: #E5ECEA; padding: 12px 14px; border-radius: 5px; overflow: auto; font: 12.5px/1.55 var(--mono); }
-.md pre code { background: none; padding: 0; color: inherit; }
-.md blockquote { margin: 0 0 .75em; padding-left: 12px; border-left: 3px solid var(--rule); color: var(--ink-2); }
-.md table { border-collapse: collapse; margin: 0 0 .9em; font-size: 13px; display: block; overflow: auto; }
-.md th, .md td { border: 1px solid var(--rule); padding: 5px 9px; text-align: left; vertical-align: top; }
-.md th { background: var(--paper); }
-.md a { color: #1B6FB0; }
-.md hr { border: 0; border-top: 1px solid var(--rule); margin: 1em 0; }
+.md { max-width: 72ch; margin: 4px 0 14px; font-size: 14.5px; line-height: 1.75; color: #1E2935; word-break: break-word; }
+.md p { margin: 0 0 .8em; }
+.md h1, .md h2, .md h3, .md h4 { margin: 1.2em 0 .45em; font-size: 15.5px; line-height: 1.4; color: var(--ink); }
+.md h1 { font-size: 18px; }
+.md h2 { font-size: 16.5px; padding-bottom: .3em; border-bottom: 1px solid var(--rule); }
+.md ul, .md ol { margin: 0 0 .8em; padding-left: 1.5em; }
+.md li { margin: .2em 0; }
+.md li::marker { color: var(--ink-3); }
+.md strong { color: var(--ink); }
+.md code { padding: 1px 5px; font: 12.5px var(--mono); background: #F0F3F2; border: 1px solid #E1E6E4; border-radius: 5px; }
+.md pre { margin: 0 0 .9em; padding: 14px 16px; overflow: auto; font: 12.5px/1.6 var(--mono); color: #E3EAE8; background: #18212C; border-radius: 10px; }
+.md pre code { padding: 0; font: inherit; color: inherit; background: none; border: 0; }
+.md blockquote { margin: 0 0 .8em; padding: 1px 0 1px 14px; color: var(--ink-2); border-left: 3px solid color-mix(in srgb, var(--c) 40%, #fff); }
+.md table { display: block; overflow: auto; margin: 0 0 1em; border-collapse: collapse; font-size: 13px; }
+.md th, .md td { padding: 6px 10px; text-align: left; vertical-align: top; border: 1px solid var(--rule); }
+.md th { background: var(--paper-2); }
+.md a { color: var(--link); text-decoration: underline; text-decoration-color: rgba(27, 111, 176, .35); text-underline-offset: 3px; }
+.md a:hover { text-decoration-color: currentColor; }
+/* 不是 http/https/mailto 的链接只显示文字，目标放在提示里 */
+.md .lk { border-bottom: 1px dotted var(--ink-3); cursor: help; }
+.md hr { margin: 1.2em 0; border: 0; border-top: 1px solid var(--rule); }
+/* 解析时替换掉的密钥 */
+.rd { display: inline-block; padding: 1px 7px 1px 6px; font: 600 11.5px/16px var(--body); font-style: normal; white-space: nowrap; vertical-align: 1px; color: var(--ok); background: var(--ok-bg); border: 1px dashed #8CCBBE; border-radius: 6px; }
+.rd::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 4px; vertical-align: 1px; border: 1.5px solid currentColor; border-radius: 50%; }
 
 /* 工具、思考的折叠块用普通按钮实现：几百个 <details> 各带一棵 shadow tree，打开大轮次时明显拖慢 */
-.fold { margin: 4px 0; font-size: 13px; }
+.fold { margin: 2px 0; font-size: 13px; }
 .fold .hd { display: flex; gap: 8px; align-items: center; }
-.fold .sum { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: baseline; padding: 4px 8px; border: 0; border-radius: 4px; background: none; color: var(--ink-2); text-align: left; }
-.fold .sum::before { content: "›"; color: var(--ink-3); transition: transform .12s; display: inline-block; width: 8px; }
-.fold.open .sum::before { transform: rotate(90deg); }
-.fold .sum:hover { background: var(--paper); }
-.fold .n { font: 600 12.5px var(--sign); color: var(--ink); min-width: 64px; }
-.fold .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; font-family: var(--mono); font-size: 12px; }
-.fold.err .n, .fold .bad { color: #B4441F; }
-.fold .bd { display: none; }
+.fold .sum { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center; padding: 5px 8px; border: 0; border-radius: 8px; background: none; color: var(--ink-2); text-align: left; }
+.fold .sum::before { content: ""; flex: none; width: 6px; height: 6px; margin: 0 3px 0 1px; border-right: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3); transform: rotate(-45deg); transition: transform .12s; }
+.fold.open .sum::before { transform: rotate(45deg); }
+.fold .sum:disabled { cursor: default; }
+.fold .sum:disabled::before { visibility: hidden; }
+.fold .sum:not(:disabled):hover { background: var(--paper-2); }
+.fold .n { flex: none; min-width: 56px; padding: 0 8px; font: 600 12px/20px var(--sign); text-align: center; color: var(--ink); background: #EDF1F0; border-radius: 6px; }
+.fold .s { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--mono); }
+.fold.err .n { color: var(--bad); background: var(--bad-bg); }
+.fold .bad { flex: none; padding: 0 8px; font: 600 11px/18px var(--body); color: #fff; background: var(--bad); border-radius: 9px; }
+.fold.think .sum { font-weight: 600; color: #6E5A9A; }
+.fold .bd { display: none; padding: 0 0 8px 22px; }
 .fold.open .bd { display: block; }
-.fold pre { margin: 4px 0 8px 16px; padding: 10px 12px; background: var(--paper); border-radius: 4px; max-height: 360px; overflow: auto; font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
-.fold.think pre { font-family: var(--body); font-size: 13px; color: var(--ink-2); }
-.jump { border: 1px dashed var(--agent); background: var(--card); border-radius: 4px; padding: 2px 8px; font-size: 12px; color: var(--ink-2); }
-.jump:hover { border-color: var(--ink); color: var(--ink); }
-.note { font-size: 12.5px; color: var(--ink-2); padding: 4px 8px; margin: 6px 0; border-left: 2px solid var(--rule); white-space: pre-wrap; }
-.cut { display: flex; align-items: center; gap: 10px; margin: 14px 0; font: 12px var(--sign); color: var(--ink-3); }
-.cut::before, .cut::after { content: ""; flex: 1; border-top: 1px dashed var(--ink-3); }
+.fold pre { margin: 6px 0 0; padding: 10px 12px; max-height: 360px; overflow: auto; font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; color: #26313C; background: var(--paper-2); border: 1px solid #E1E6E4; border-radius: 9px; }
+.fold pre.in::before, .fold pre.out::before { display: block; margin-bottom: 7px; font: 600 10.5px/1 var(--body); letter-spacing: .12em; color: var(--ink-3); }
+.fold pre.in::before { content: "输入"; }
+.fold pre.out::before { content: "输出"; }
+.fold.err pre.out { background: #FFF8F6; border-color: #F1CEC6; }
+.fold.think pre { font: 13px/1.7 var(--body); color: var(--ink-2); background: #F8F6FC; border-color: #E7E1F3; }
+.jump { flex: none; height: 26px; padding: 0 10px; font-size: 12px; color: var(--ink-2); background: var(--card); border: 1px dashed var(--agent); border-radius: 7px; }
+.jump:hover { border-style: solid; border-color: var(--ink-2); color: var(--ink); }
+.note { margin: 8px 0; padding: 7px 12px; font-size: 12.5px; color: var(--ink-2); white-space: pre-wrap; background: var(--paper-2); border-radius: 8px; }
+.cut { display: flex; align-items: center; gap: 10px; margin: 18px 0; font: 600 11.5px/1 var(--sign); color: var(--ink-2); }
+.cut::before, .cut::after { content: ""; flex: 1; border-top: 1.5px dashed var(--rule-2); }
 .empty { position: fixed; inset: 56px 0 0; display: grid; place-items: center; color: var(--ink-2); }
+.empty div { max-width: 420px; padding: 28px 32px; text-align: center; line-height: 1.7; background: var(--card); border: 1px solid var(--rule); border-radius: 16px; box-shadow: var(--float); }
 
+@media (max-width: 1440px) { .stats .range { display: none; } }
+@media (max-width: 1220px) { .stats, .top h1 small { display: none; } }
 @media (max-width: 900px) {
-  .stats, .hint, #mini { display: none; }
-  .lines { display: none; }
+  .hint, #mini, .lines { display: none; }
   .search { width: 40vw; }
+  .group .tbtn::before { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .drawer { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .drawer, .drawer.open { transition: none; } }
 </style>
 </head>
 <body>
 <header class="top">
+  <div class="brand" aria-hidden="true"><!--__BRAND__--></div>
   <h1 id="pname"></h1>
   <div class="stats" id="stats"></div>
   <div class="spacer"></div>
   <label class="search" title="搜索提问、回复和工具调用（快捷键 /）">
+    <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
     <input id="q" type="search" placeholder="搜索这个项目的对话" autocomplete="off">
     <span class="count" id="qcount"></span>
+    <kbd>/</kbd>
   </label>
-  <div class="group">
+  <div class="group" role="group" aria-label="显示选项">
     <button class="tbtn" id="tLines" aria-pressed="true" title="显示线路列表">线路</button>
-    <button class="tbtn" id="tAgents" aria-pressed="false" title="把所有子代理都画成支线；也可以点卡片上的「子代理」单独展开">展开全部子代理</button>
+    <button class="tbtn" id="tAgents" aria-pressed="false" title="把所有子代理都画成支线；也可以点卡片上的「子代理」单独展开">全部子代理</button>
     <button class="tbtn" id="tTools" aria-pressed="true" title="详情里显示工具调用">工具</button>
     <button class="tbtn" id="tThink" aria-pressed="false" title="详情里显示思考过程">思考</button>
   </div>
   <div class="menu" id="exportMenu">
-    <button class="tbtn" id="exportBtn" aria-haspopup="true" aria-expanded="false">导出</button>
+    <button class="tbtn primary" id="exportBtn" aria-haspopup="true" aria-expanded="false">导出<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6.5 9.5 5.5 5.5 5.5-5.5"/></svg></button>
     <div class="menu-list" role="menu">
       <button data-ex="md-all" role="menuitem">整个项目 Markdown<span>所有会话，按时间排列</span></button>
       <button data-ex="md-path" role="menuitem">选中回复的上下文链 Markdown<span>从起点一直到选中的这一轮</span></button>
@@ -203,16 +287,22 @@ button { cursor: pointer; }
 <div id="vp"><div id="world"><svg id="edges"></svg></div></div>
 <nav class="lines" id="lines" aria-label="线路列表"></nav>
 <canvas id="mini" width="544" height="300" aria-label="全局缩略图"></canvas>
-<div class="zoom"><button id="zIn" title="放大">+</button><button id="zOut" title="缩小">−</button><button id="zFit" title="显示全部">⤢</button></div>
-<div class="hint">拖动画布或滚轮移动，Shift+滚轮上下移动，Ctrl+滚轮缩放，← → 沿线路切换</div>
+<div class="zoom">
+  <button id="zIn" title="放大" aria-label="放大"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg></button>
+  <button id="zOut" title="缩小" aria-label="缩小"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 12h13"/></svg></button>
+  <hr>
+  <button id="zFit" title="显示全部" aria-label="显示全部"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9V4.5H9M15 4.5h4.5V9M19.5 15v4.5H15M9 19.5H4.5V15"/></svg></button>
+</div>
+<div class="hint"><span>拖动或滚轮平移</span><i></i><kbd>Shift</kbd><span>+滚轮 上下</span><i></i><kbd>Ctrl</kbd><span>+滚轮 缩放</span><i></i><kbd>←</kbd><kbd>→</kbd><span>沿线路切换</span><i></i><kbd>/</kbd><span>搜索</span></div>
 
 <aside class="drawer" id="drawer" aria-label="回复详情">
   <div class="dh">
     <div class="l1">
       <span class="no" id="dNo"></span><span class="lt" id="dLane"></span>
-      <button id="dPrev" title="上一站（←）">‹</button><button id="dNext" title="下一站（→）">›</button>
-      <button id="dUp" title="回到发起它的那一轮">发起处</button>
-      <button id="dClose" title="关闭（Esc）">✕</button>
+      <button id="dUp" title="回到发起它的那一轮"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 14.5 4.5 9.5l5-5"/><path d="M4.5 9.5h10a5 5 0 0 1 0 10H13"/></svg>发起处</button>
+      <button id="dPrev" title="上一站（←）" aria-label="上一站"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6"/></svg></button>
+      <button id="dNext" title="下一站（→）" aria-label="下一站"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg></button>
+      <button id="dClose" title="关闭（Esc）" aria-label="关闭"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
     </div>
     <div class="l2" id="dMeta"></div>
   </div>
@@ -231,6 +321,9 @@ button { cursor: pointer; }
 const DATA = JSON.parse(document.getElementById('ctx-data').textContent);
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// 解析时密钥已被换成这串占位（parse.mjs 的 HIDDEN），这里只是把它画成标签。替换内容不含引号，落进属性值里也闭合不了
+const HIDDEN = '[密钥已隐藏]';
+const chipHidden = (html) => (html.includes(HIDDEN) ? html.split(HIDDEN).join('<i class=rd>密钥已隐藏</i>') : html);
 
 // 工具输入输出按轮存在单独的块里（见 render.mjs 的 splitBulk），展开时才解析那一轮
 const chunkCache = new Map();
@@ -405,8 +498,15 @@ function fillCard(el, t) {
   // 卡片只露两三行，没必要把几千字的全文塞进去排版
   el.innerHTML = `<div class="meta"><span class="idx">${idxOf.get(t.id)}</span><span>${fmtTime(t.t0)}</span>`
     + `<span class="ctx${pct > 80 ? ' hot' : ''}" title="上下文占用 ${t.ctx.toLocaleString()} tokens">${kfmt(t.ctx)}<i style="--p:${pct}%"></i></span></div>`
-    + `<div class="q">${esc(t.prompt.slice(0, 200))}</div><div class="a">${esc(plain(t.items.findLast((i) => i.k === 'text')?.text.slice(0, 800)).slice(0, 240))}</div><div class="foot">${foot.join('')}</div>`;
+    + `<div class="q">${chipHidden(esc(t.prompt.slice(0, 200)))}</div><div class="a">${chipHidden(esc(plain(t.items.findLast((i) => i.k === 'text')?.text.slice(0, 800)).slice(0, 240)))}</div><div class="foot">${foot.join('')}</div>`;
+  el.classList.toggle('q1', oneLine(t.prompt));
   el.dataset.full = '1';
+}
+// 粗估提问能不能一行放下（提问栏约 250px 宽，汉字约 13px，其余约 7.5px），放得下就让回复多露一行。估错只是少露或截掉一行
+function oneLine(s) {
+  let w = 0;
+  for (let i = 0; i < s.length && i < 40; i++) if ((w += s.charCodeAt(i) > 0x2E7F ? 13 : 7.5) > 236) return false;
+  return true;
 }
 function syncAgentButton(el, t) {
   const b = el.querySelector('.agt');
@@ -612,8 +712,10 @@ function inline(s) {
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, '$1<em>$2</em>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, url) => (/^(https?:|mailto:|#|\.{0,2}\/)/.test(url) || !/^[a-z]+:/i.test(url)
-      ? `<a href="${url}" target="_blank" rel="noopener">${text}</a>` : text));
+    // 只有 http(s)、mailto 和页内锚点做成真链接；javascript:、file:、相对路径这类一律只显示文字，目标放进提示。
+    // 地址里不收占位符，代码片段替换回来时就不会落进 href
+    .replace(/\[([^\]]+)\]\(([^)\s\u0000]+)\)/g, (m, text, url) => (/^(https?:\/\/|mailto:|#)/i.test(url)
+      ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>` : `<span class="lk" title="${url}">${text}</span>`));
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[i])}</code>`);
 }
 
@@ -865,14 +967,17 @@ $('zFit').onclick = fit;
 // ---------- 缩略图 ----------
 const mini = $('mini'), mctx = mini.getContext('2d');
 const miniBase = document.createElement('canvas'); // 卡片点阵只在布局变化时画一次，每帧只叠视口框
-let miniScale = 1;
-const miniRect = (p) => [layout.x(p.col) * miniScale, (layout.y(p.row) + ROW_CARD) * miniScale, Math.max(2, W * miniScale), Math.max(2, H * miniScale * 0.6)];
+let miniScale = 1, miniX = 0, miniY = 0; // 线路图通常又宽又扁，缩放后在缩略图里居中，四周留一点边
+const miniRect = (p) => [miniX + layout.x(p.col) * miniScale, miniY + (layout.y(p.row) + ROW_CARD) * miniScale, Math.max(2, W * miniScale), Math.max(2, H * miniScale * 0.6)];
 function drawMiniBase() {
   if (!layout) return;
   miniBase.width = mini.width;
   miniBase.height = mini.height;
   const b = miniBase.getContext('2d');
-  miniScale = Math.min(mini.width / layout.width, mini.height / layout.height);
+  const pad = 16;
+  miniScale = Math.min((mini.width - 2 * pad) / layout.width, (mini.height - 2 * pad) / layout.height);
+  miniX = (mini.width - layout.width * miniScale) / 2;
+  miniY = (mini.height - layout.height * miniScale) / 2;
   b.globalAlpha = 0.8;
   for (const t of layout.visible) {
     const lane = laneOf.get(t.lane);
@@ -891,14 +996,17 @@ function drawMini() {
     mctx.fillStyle = lane.color;
     mctx.fillRect(...miniRect(layout.pos.get(state.sel)));
   }
+  mctx.fillStyle = 'rgba(23, 32, 43, .07)';
   mctx.strokeStyle = '#17202B';
   mctx.lineWidth = 2;
-  mctx.strokeRect((-view.x / view.k) * miniScale, (-view.y / view.k) * miniScale, (vpSize.w / view.k) * miniScale, (vpSize.h / view.k) * miniScale);
+  const vr = [miniX + (-view.x / view.k) * miniScale, miniY + (-view.y / view.k) * miniScale, (vpSize.w / view.k) * miniScale, (vpSize.h / view.k) * miniScale];
+  mctx.fillRect(...vr);
+  mctx.strokeRect(...vr);
 }
 function miniJump(e) {
   const r = mini.getBoundingClientRect();
-  const wx = ((e.clientX - r.left) * (mini.width / r.width)) / miniScale;
-  const wy = ((e.clientY - r.top) * (mini.height / r.height)) / miniScale;
+  const wx = ((e.clientX - r.left) * (mini.width / r.width) - miniX) / miniScale;
+  const wy = ((e.clientY - r.top) * (mini.height / r.height) - miniY) / miniScale;
   view.x = vpSize.w / 2 - wx * view.k;
   view.y = vpSize.h / 2 - wy * view.k;
   applyView();
@@ -977,20 +1085,21 @@ function openDrawer(t) {
   $('dUp').onclick = () => origin && select(origin, true);
 
   const total = laneTurns.get(t.lane).length;
+  const stat = (k, v) => `<div class="st"><span class="k">${k}</span><span class="v">${v}</span></div>`;
   const meta = [
-    `<span><b>${idxOf.get(t.id)}</b><span class="k">/ ${total} 轮</span></span>`,
-    `<span><span class="k">开始</span>${fmtTime(t.t0)}</span>`,
-    `<span><span class="k">用时</span>${fmtDur(t.t0, t.t1)}</span>`,
-    `<span><span class="k">上下文</span>${t.ctx.toLocaleString()}</span>`,
-    `<span><span class="k">输出</span>${t.out.toLocaleString()}</span>`,
+    stat('轮次', `<b>${idxOf.get(t.id)}</b> / ${total}`),
+    stat('开始', fmtTime(t.t0)),
+    stat('用时', fmtDur(t.t0, t.t1)),
+    stat('上下文', t.ctx.toLocaleString()),
+    stat('输出', t.out.toLocaleString()),
   ];
-  if (t.model) meta.push(`<span><span class="k">模型</span>${esc(t.models.join('、'))}</span>`);
-  if (lane.branch && lane.kind === 'session') meta.push(`<span><span class="k">分支</span>${esc(lane.branch)}</span>`);
+  if (t.model) meta.push(stat('模型', esc(t.models.join('、'))));
+  if (lane.branch && lane.kind === 'session') meta.push(stat('分支', esc(lane.branch)));
   $('dMeta').innerHTML = meta.join('');
 
   // 工具输入输出、思考过程默认折叠，展开时才生成内容：大轮次里动辄几百个工具调用，一次全塞进去会卡住点击
   const lazy = [];
-  const body = [`<div class="who">你</div><div class="prompt">${esc(t.prompt)}</div><div class="who">Claude</div>`];
+  const body = [`<div class="who you">你</div><div class="prompt">${esc(t.prompt)}</div><div class="who ai">Claude</div>`];
   let pendingTools = 0;
   const flushTools = () => {
     if (pendingTools) { body.push(`<div class="note">调用了 ${pendingTools} 次工具（打开顶栏「工具」可查看）</div>`); pendingTools = 0; }
@@ -1015,7 +1124,7 @@ function openDrawer(t) {
   const db = $('dBody');
   db.lazyItems = lazy;
   db.scrollTop = 0;  // 先回顶再换内容：换完再设会强制把新内容同步排版一遍
-  db.innerHTML = body.join('');
+  db.innerHTML = chipHidden(body.join(''));
   drawer.classList.add('open');
 }
 
@@ -1041,8 +1150,8 @@ $('dBody').addEventListener('click', (e) => {
     const it = $('dBody').lazyItems[Number(fold.dataset.lazy)];
     fold.dataset.filled = '1';
     const inp = it.k === 'tool' ? toolInput(it) : '', res = it.k === 'tool' ? toolResult(it) : '';
-    fold.insertAdjacentHTML('beforeend', `<div class="bd">${it.k === 'think' ? `<pre>${esc(it.text)}</pre>`
-      : `${inp ? `<pre>${esc(inp)}</pre>` : ''}${res ? `<pre>${esc(res)}</pre>` : ''}`}</div>`);
+    fold.insertAdjacentHTML('beforeend', chipHidden(`<div class="bd">${it.k === 'think' ? `<pre>${esc(it.text)}</pre>`
+      : `${inp ? `<pre class="in">${esc(inp)}</pre>` : ''}${res ? `<pre class="out">${esc(res)}</pre>` : ''}`}</div>`));
   }
   const open = fold.classList.toggle('open');
   sum.setAttribute('aria-expanded', String(open));
@@ -1171,7 +1280,8 @@ document.addEventListener('keydown', (e) => {
 // ---------- 线路列表 ----------
 function renderLines() {
   const nav = $('lines');
-  nav.innerHTML = DATA.lanes.filter((l) => l.kind === 'session').map((l) => {
+  const sessions = DATA.lanes.filter((l) => l.kind === 'session');
+  nav.innerHTML = `<div class="lh">线路<b>${sessions.length}</b></div>` + sessions.map((l) => {
     const agents = DATA.lanes.filter((a) => a.kind === 'agent' && a.sessionId === l.sessionId).length;
     return `<button class="row" data-lane="${esc(l.key)}" style="--c:${l.color}"><span class="no">${esc(l.no)}</span>`
       + `<span class="t" title="${esc(l.title)}">${esc(l.title)}</span>`
@@ -1184,9 +1294,12 @@ function renderLines() {
 $('pname').innerHTML = `${esc(DATA.project.name)}<small>上下文树</small>`;
 document.title = `${DATA.project.name} · 上下文树`;
 const s = DATA.stats;
-$('stats').innerHTML = `<span><b>${s.sessions}</b>个会话</span><span><b>${s.turns}</b>轮对话</span>${s.agents ? `<span><b>${s.agents}</b>个子代理</span>` : ''}<span>${fmtTime(s.start)} 至 ${fmtTime(s.end)}</span>`;
+const LOCK = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>';
+$('stats').innerHTML = `<span><b>${s.sessions}</b>个会话</span><span><b>${s.turns}</b>轮对话</span>${s.agents ? `<span><b>${s.agents}</b>个子代理</span>` : ''}`
+  + (s.redacted ? `<span class="safe" title="生成时按规则把密钥换成了占位，页面里只有「密钥已隐藏」标签">${LOCK}已隐藏<b>${s.redacted}</b>处密钥</span>` : '')
+  + `<span class="range">${fmtTime(s.start)} 至 ${fmtTime(s.end)}</span>`;
 if (!DATA.turns.length) {
-  document.body.insertAdjacentHTML('beforeend', '<div class="empty">这个项目下还没有可显示的对话。先在该目录里和 Claude Code 聊几轮，再重新生成。</div>');
+  document.body.insertAdjacentHTML('beforeend', '<div class="empty"><div>这个项目下还没有可显示的对话。<br>先在该目录里和 Claude Code 聊几轮，再重新生成。</div></div>');
 } else {
   buildLayout();
   // 先定好初始视角再渲染，首屏挂上的就是真正要显示的那批卡片

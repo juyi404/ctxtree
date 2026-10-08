@@ -90,7 +90,7 @@ function main() {
       const file = path.join(outDir, `${safeName(p.id)}.html`);
       const { data } = exportOne(p.dir, file, args);
       if (!data.turns.length) { fs.rmSync(file); continue; }
-      entries.push({ href: path.basename(file), name: data.project.name, cwd: data.project.cwd, sessions: data.stats.sessions, turns: data.stats.turns, end: data.stats.end });
+      entries.push({ href: path.basename(file), name: data.project.name, cwd: data.project.cwd, sessions: data.stats.sessions, turns: data.stats.turns, end: data.stats.end, redacted: data.stats.redacted });
       console.log(`✓ ${data.project.name.padEnd(28)} ${data.stats.sessions} 个会话 ${data.stats.turns} 轮  ${size(file)}${hiddenNote(data, '  ')}`);
     }
     const index = path.join(outDir, 'index.html');
