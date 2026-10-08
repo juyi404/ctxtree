@@ -37,13 +37,14 @@ export function listProjects(root = PROJECTS_DIR) {
     if (!fs.statSync(dir).isDirectory()) continue;
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
     if (!files.length) continue;
-    let last = 0, cwd = null;
+    let last = 0, bytes = 0, cwd = null;
     for (const f of files) {
       const st = fs.statSync(path.join(dir, f));
       if (st.mtimeMs > last) last = st.mtimeMs;
+      bytes += st.size;
       if (!cwd) cwd = readHeadCwd(path.join(dir, f));
     }
-    out.push({ id, dir, cwd, sessions: files.length, lastModified: new Date(last).toISOString() });
+    out.push({ id, dir, cwd, sessions: files.length, bytes, lastModified: new Date(last).toISOString() });
   }
   return out.sort((a, b) => b.lastModified.localeCompare(a.lastModified));
 }
@@ -206,6 +207,8 @@ const assigned = (m, head, v) => {
 const NAME = String.raw`\w*?(?:key|token|secret|password|passwd|pwd)`;
 const FLAG = String.raw`[\w-]*?(?:key|token|secret|password|passwd|pwd)`;
 const VALUE = String.raw`([^\s"'\x60,;&<>(){}[\]]{6,})`;
+// [规则, 替换, 先决条件]。先决条件是规则能命中的必要条件，不满足就跳过这条规则，结果不变：
+// 规则开头的 \b\w*? 会从每个词首试一遍，先决条件以字面量开头，引擎能直接跳着找
 const SECRET_RULES = [
   // 私钥整块；被截断时一直隐藏到结尾
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, hide],
@@ -215,11 +218,13 @@ const SECRET_RULES = [
   // 其他固定前缀：GitHub、AWS、Google、Slack、Hugging Face、JWT
   [/\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[abposr]-[A-Za-z0-9-]{10,}|hf_[A-Za-z0-9]{30,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/g, hide],
   // 连接串里的密码：scheme://user:密码@host；postgres:postgres、root:root 这种用户名当密码的本地默认值不算
-  [/(\b[a-z][a-z0-9+.-]*:\/\/([^\s:\/@]+):)([^\s@\/]{4,})(?=@)/gi, (m, head, user, v) => (PLACEHOLDER.test(v) || v === user ? m : head + hide())],
+  [/(\b[a-z][a-z0-9+.-]*:\/\/([^\s:\/@]+):)([^\s@\/]{4,})(?=@)/gi, (m, head, user, v) => (PLACEHOLDER.test(v) || v === user ? m : head + hide()),
+    /:\/\/[^\s:\/@]+:[^\s@\/]{4,}@/],
   // 请求头：Bearer xxx、Basic xxx
   [/(\b(?:Bearer|Basic)\s+)([A-Za-z0-9._~+\/=-]{16,})/g, (m, head, v) => (alnumMix(v) ? head + hide() : m)],
   // 赋值：api_key=xxx、"password": "xxx"、OPENAI_KEY: xxx、openaiApiKey = 'xxx'（冒号等号前后不跨行）
-  [new RegExp(String.raw`(\b${NAME}["']?[ \t]*[:=][ \t]*["']?)${VALUE}`, 'gi'), assigned],
+  [new RegExp(String.raw`(\b${NAME}["']?[ \t]*[:=][ \t]*["']?)${VALUE}`, 'gi'), assigned,
+    /(?:key|token|secret|password|passwd|pwd)["']?[ \t]*[:=]/i],
   // 命令行参数：--api-key xxx、--password xxx
   [new RegExp(String.raw`((?:^|\s)--?${FLAG}[ \t]+["']?)${VALUE}`, 'gi'), assigned],
 ];
@@ -228,7 +233,7 @@ const MAYBE = /sk-|ak[_-]|k_live_|k_test_|gh[pousr]_|github_pat_|hf_|AKIA|AIza|x
 
 export function redact(s) {
   if (!s || !MAYBE.test(s)) return s;
-  for (const [re, fn] of SECRET_RULES) s = s.replace(re, fn);
+  for (const [re, fn, need] of SECRET_RULES) if (!need || need.test(s)) s = s.replace(re, fn);
   return s;
 }
 
@@ -244,13 +249,20 @@ function redactDeep(v) {
 }
 
 // 先脱敏再截断，免得密钥被截成半截认不出。长文本只对截断处往后多留的一截做脱敏，不用扫完几 MB 的输出；
-// 这一截末尾被切开的半个词先去掉——前面的密钥换成短占位后，它可能被挪进保留范围
+// 这一截末尾被切开的半个词（最多 512 字符）先去掉——前面的密钥换成短占位后，它可能被挪进保留范围。
+// 半个词倒着找分隔符：写成 /[^…]{1,512}$/ 时引擎会从每个位置起试一遍，长输出上占掉解析的一半时间
+const WORD_STOP = /[\s"'`,;<>(){}[\]]/;
+function dropCutWord(w) {
+  let i = w.length;
+  for (const stop = Math.max(0, i - 512); i > stop && !WORD_STOP.test(w[i - 1]);) i--;
+  return w.slice(0, i);
+}
 function clip(s, n) {
   if (s == null) return '';
   s = String(s);
   if (!(n > 0) || s.length <= n) return redact(s);
   let w = s.slice(0, n + 1024);
-  if (s.length > w.length) w = w.replace(/[^\s"'`,;<>(){}[\]]{1,512}$/, '');
+  if (s.length > w.length) w = dropCutWord(w);
   const r = redact(w);
   if (w.length === s.length && r.length <= n) return r;
   return `${r.slice(0, n)}\n…（已截断，原长 ${s.length} 字符）`;

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { listProjects, resolveProject, parseProject, PROJECTS_DIR } from '../src/parse.mjs';
 import { renderHtml, renderIndex } from '../src/render.mjs';
 import { toMarkdown } from '../src/export-md.mjs';
@@ -71,7 +73,51 @@ const safeName = (s) => s.replace(/[<>:"/\\|?*\s]+/g, '_');
 
 const hiddenNote = (data, sep = '，') => (data.stats.redacted ? `${sep}隐藏了 ${data.stats.redacted} 处密钥` : '');
 
-function main() {
+// all 里的一个项目：导出后返回总目录条目和要打印的那一行；没有对话的项目不留文件
+function exportEntry(dir, file, args) {
+  const { data } = exportOne(dir, file, args);
+  if (!data.turns.length) { fs.rmSync(file); return {}; }
+  return {
+    entry: { href: path.basename(file), name: data.project.name, cwd: data.project.cwd, sessions: data.stats.sessions, turns: data.stats.turns, end: data.stats.end, redacted: data.stats.redacted },
+    line: `✓ ${data.project.name.padEnd(28)} ${data.stats.sessions} 个会话 ${data.stats.turns} 轮  ${size(file)}${hiddenNote(data, '  ')}`,
+  };
+}
+
+// 项目之间互不依赖，分给几个工作线程并行导出（工作线程跑的也是这个文件，见末尾）。
+// 大项目先发，免得最后剩一个大项目单独跑；每个线程同时只拿一个项目，内存跟着线程数走，所以封顶
+const MAX_WORKERS = 8;
+function exportAll(projects, outDir, args) {
+  const jobs = [...projects].sort((a, b) => b.bytes - a.bytes);
+  const n = Math.min(jobs.length, MAX_WORKERS, Math.max(1, (os.availableParallelism?.() ?? os.cpus().length) - 1));
+  const entries = [];
+  const take = (r) => { if (r.entry) { entries.push(r.entry); console.log(r.line); } };
+  if (n <= 1) {
+    for (const p of jobs) take(exportEntry(p.dir, path.join(outDir, `${safeName(p.id)}.html`), args));
+    return Promise.resolve(entries);
+  }
+  return new Promise((resolve, reject) => {
+    let next = 0, running = n;
+    const workers = [];
+    const feed = (w) => {
+      if (next < jobs.length) {
+        const p = jobs[next++];
+        w.postMessage({ dir: p.dir, file: path.join(outDir, `${safeName(p.id)}.html`), args });
+        return;
+      }
+      w.terminate();
+      if (--running === 0) resolve(entries);
+    };
+    for (let i = 0; i < n; i++) {
+      const w = new Worker(new URL(import.meta.url));
+      workers.push(w);
+      w.on('message', (r) => { take(r); feed(w); });
+      w.on('error', (e) => { for (const x of workers) x.terminate(); reject(e); });
+      feed(w);
+    }
+  });
+}
+
+async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { console.log(HELP); return; }
   const [cmd] = args._;
@@ -85,14 +131,7 @@ function main() {
 
   if (cmd === 'all') {
     const outDir = path.resolve(args.out || 'out');
-    const entries = [];
-    for (const p of listProjects()) {
-      const file = path.join(outDir, `${safeName(p.id)}.html`);
-      const { data } = exportOne(p.dir, file, args);
-      if (!data.turns.length) { fs.rmSync(file); continue; }
-      entries.push({ href: path.basename(file), name: data.project.name, cwd: data.project.cwd, sessions: data.stats.sessions, turns: data.stats.turns, end: data.stats.end, redacted: data.stats.redacted });
-      console.log(`✓ ${data.project.name.padEnd(28)} ${data.stats.sessions} 个会话 ${data.stats.turns} 轮  ${size(file)}${hiddenNote(data, '  ')}`);
-    }
+    const entries = await exportAll(listProjects(), outDir, args);
     const index = path.join(outDir, 'index.html');
     fs.writeFileSync(index, renderIndex(entries));
     console.log(`\n总目录：${index}`);
@@ -111,4 +150,5 @@ function main() {
   if (args.open) openInBrowser(out);
 }
 
-try { main(); } catch (e) { console.error(`出错了：${e.message}`); process.exit(1); }
+if (isMainThread) main().catch((e) => { console.error(`出错了：${e.message}`); process.exit(1); });
+else parentPort.on('message', ({ dir, file, args }) => parentPort.postMessage(exportEntry(dir, file, args)));

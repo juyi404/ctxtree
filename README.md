@@ -26,7 +26,7 @@ node bin/ctxtree.mjs all --open
 ```
 
 - `[项目]` 可以是项目路径（`E:\PaM`）、转录目录名（`E--PaM`）或转录目录的完整路径；不写就取当前目录。
-- 默认输出到 `./out/`，`-o` 可以改。`all` 会给每个项目各生成一份，外加总目录 `index.html`。
+- 默认输出到 `./out/`，`-o` 可以改。`all` 会给每个项目各生成一份，外加总目录 `index.html`；各项目分给几个工作线程并行导出（最多 8 个），大项目先做。
 - `--md`、`--json` 同时导出 Markdown / JSON。
 - 文件太大时用 `--no-tools`（不保存工具输入输出）、`--no-thinking`、`--max-tool 1000`。
 

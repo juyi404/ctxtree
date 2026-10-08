@@ -367,13 +367,15 @@ let sn = 0;
 for (const l of DATA.lanes) {
   if (l.kind === 'session') { l.no = `S${++sn}`; l.color = LINE_COLORS[(sn - 1) % LINE_COLORS.length]; }
 }
+// 子代理按所属会话依次编号；计数顺带给线路列表用。几百条线路时逐条回头筛兄弟线路是平方级
+const agentCount = new Map();
 for (const l of DATA.lanes) {
-  if (l.kind === 'agent') {
-    const parent = laneOf.get(l.sessionId);
-    l.color = parent?.color || '#8F9AA6';
-    const sibs = DATA.lanes.filter((x) => x.kind === 'agent' && x.sessionId === l.sessionId);
-    l.no = `${parent?.no || 'S'}·${sibs.indexOf(l) + 1}`;
-  }
+  if (l.kind !== 'agent') continue;
+  const parent = laneOf.get(l.sessionId);
+  const n = (agentCount.get(l.sessionId) || 0) + 1;
+  agentCount.set(l.sessionId, n);
+  l.color = parent?.color || '#8F9AA6';
+  l.no = `${parent?.no || 'S'}·${n}`;
 }
 
 const state = { agents: false, openAgents: new Set(), tools: true, think: false, lines: true, sel: null, hits: [], hitSet: new Set(), hitPos: -1 };
@@ -1019,7 +1021,7 @@ mini.addEventListener('pointerup', () => { miniDrag = false; });
 // ---------- 选中与详情 ----------
 function laneNeighbors(t) {
   const list = laneTurns.get(t.lane);
-  const i = list.indexOf(t);
+  const i = idxOf.get(t.id) - 1;
   return { prev: list[i - 1] || null, next: list[i + 1] || null };
 }
 
@@ -1282,7 +1284,7 @@ function renderLines() {
   const nav = $('lines');
   const sessions = DATA.lanes.filter((l) => l.kind === 'session');
   nav.innerHTML = `<div class="lh">线路<b>${sessions.length}</b></div>` + sessions.map((l) => {
-    const agents = DATA.lanes.filter((a) => a.kind === 'agent' && a.sessionId === l.sessionId).length;
+    const agents = agentCount.get(l.sessionId) || 0;
     return `<button class="row" data-lane="${esc(l.key)}" style="--c:${l.color}"><span class="no">${esc(l.no)}</span>`
       + `<span class="t" title="${esc(l.title)}">${esc(l.title)}</span>`
       + `<span class="d">${fmtTime(l.start)}　${l.turnCount} 轮${agents ? `　${agents} 个子代理` : ''}</span></button>`;
