@@ -1,0 +1,3 @@
+#!/bin/sh
+# 推送前查这次要推的所有提交（含历史里加了又删掉的）
+exec node scripts/check-secrets.mjs --push

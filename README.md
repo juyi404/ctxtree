@@ -39,6 +39,8 @@ node bin/ctxtree.mjs all --open
 - 按规则识别，不保证一个不漏；不认识格式的密钥（比如纯数字、很短的口令）可能留在页面里，外发前自己再看一眼。
 - 只处理导出的文件。`~/.claude/projects/` 下的原始转录和项目里的配置文件不会动，密钥还在那里。
 
+仓库本身也有一道检查：`.githooks/` 里的提交前、推送前钩子用同一套规则扫新增的内容，发现密钥就拒绝提交或推送，只打印文件、行号和脱敏后的那一行。克隆下来后执行一次 `npm install`（或 `git config core.hooksPath .githooks`）启用；`npm run secrets` 扫全部历史。`.env`、`*.pem`、`*.key`、`.claude/settings.local.json` 已经在 `.gitignore` 里。
+
 ## 页面里的操作
 
 | 操作 | 作用 |

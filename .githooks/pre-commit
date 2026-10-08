@@ -1,0 +1,3 @@
+#!/bin/sh
+# 提交前查暂存区里新增的行有没有密钥
+exec node scripts/check-secrets.mjs --staged

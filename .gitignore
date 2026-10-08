@@ -1,2 +1,9 @@
 out/
 node_modules/
+# 密钥和本地配置不进仓库
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.claude/settings.local.json

@@ -8,7 +8,9 @@
     "build": "node bin/ctxtree.mjs",
     "all": "node bin/ctxtree.mjs all",
     "test": "node --test test/*.test.mjs",
-    "stress": "node bench/stress.mjs"
+    "stress": "node bench/stress.mjs",
+    "secrets": "node scripts/check-secrets.mjs --all",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "engines": { "node": ">=18" },
   "license": "MIT"
