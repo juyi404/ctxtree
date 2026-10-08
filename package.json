@@ -1,0 +1,15 @@
+{
+  "name": "context-tree",
+  "version": "0.1.0",
+  "description": "把一个项目下所有 Claude Code 对话导出成横向的上下文树（HTML / Markdown / JSON）",
+  "type": "module",
+  "bin": { "ctxtree": "bin/ctxtree.mjs" },
+  "scripts": {
+    "build": "node bin/ctxtree.mjs",
+    "all": "node bin/ctxtree.mjs all",
+    "test": "node --test test/*.test.mjs",
+    "stress": "node bench/stress.mjs"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}

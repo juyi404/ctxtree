@@ -1,0 +1,1214 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+:root {
+  --paper: #EEF1F0;
+  --card: #FFFFFF;
+  --ink: #17202B;
+  --ink-2: #4E5B68;
+  --ink-3: #8A96A2;
+  --rule: #D3DAD8;
+  --agent: #8F9AA6;
+  --hit: #F2B705;
+  --sign: "Bahnschrift", "DIN Alternate", "Barlow", "Roboto Condensed", "Segoe UI", sans-serif;
+  --body: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "Cascadia Code", "JetBrains Mono", Consolas, "Microsoft YaHei UI", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font: 14px/1.5 var(--body); overflow: hidden; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* 顶栏 */
+.top { position: fixed; inset: 0 0 auto 0; height: 56px; display: flex; align-items: center; gap: 18px; padding: 0 16px 0 20px; background: var(--paper); border-bottom: 1px solid var(--rule); z-index: 20; }
+.top h1 { margin: 0; font: 600 22px/1 var(--sign); letter-spacing: .01em; white-space: nowrap; }
+.top h1 small { font: 400 13px/1 var(--body); color: var(--ink-2); margin-left: 10px; letter-spacing: 0; }
+.stats { display: flex; gap: 14px; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
+.stats b { font: 600 15px/1 var(--sign); color: var(--ink); margin-right: 3px; }
+.spacer { flex: 1; }
+.search { display: flex; align-items: center; height: 34px; border: 1px solid var(--rule); background: var(--card); border-radius: 17px; padding: 0 6px 0 14px; width: min(340px, 30vw); }
+.search input { border: 0; outline: 0; background: none; flex: 1; min-width: 0; }
+.search .count { font: 12px var(--sign); color: var(--ink-3); padding: 0 6px; white-space: nowrap; }
+.tbtn { height: 34px; padding: 0 12px; border: 1px solid var(--rule); background: var(--card); border-radius: 6px; white-space: nowrap; }
+.tbtn:hover { border-color: var(--ink-2); }
+.tbtn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.group { display: flex; gap: 6px; }
+.menu { position: relative; }
+.menu-list { position: absolute; right: 0; top: 40px; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 6px; min-width: 230px; display: none; box-shadow: 0 8px 24px rgba(23, 32, 43, .12); }
+.menu.open .menu-list { display: block; }
+.menu-list button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 4px; }
+.menu-list button:hover { background: var(--paper); }
+.menu-list button span { display: block; font-size: 12px; color: var(--ink-3); }
+
+/* 画布 */
+#vp { position: fixed; inset: 56px 0 0 0; overflow: hidden; cursor: grab; touch-action: none; }
+#vp.dragging { cursor: grabbing; }
+/* 尺寸由脚本按布局写死，所以可以隔离尺寸和布局：挂卸卡片时只重排改动的那几个，不牵连整个画布。不加 paint 隔离，线路牌可能伸出右边界 */
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; contain: size layout style; user-select: none; -webkit-user-select: none; }
+#world svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+
+.terminus { position: absolute; width: 214px; padding: 14px 16px; background: var(--ink); color: var(--paper); border-radius: 8px; }
+.terminus .name { font: 600 26px/1.1 var(--sign); overflow-wrap: anywhere; }
+.terminus .name.long { font-size: 19px; }
+.terminus .path { font: 11.5px/1.4 var(--mono); opacity: .7; margin-top: 6px; word-break: break-all; }
+
+.badge { position: absolute; display: flex; align-items: center; gap: 8px; height: 24px; white-space: nowrap; pointer-events: auto; cursor: pointer; }
+.badge .no { font: 600 13px/24px var(--sign); color: #fff; background: var(--c); min-width: 34px; padding: 0 7px; text-align: center; border-radius: 12px; }
+.badge.agent .no { background: var(--card); color: var(--ink-2); border: 1.5px dashed var(--agent); line-height: 21px; }
+.badge .t { font-weight: 600; font-size: 13px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+.badge .d { font: 12px var(--sign); color: var(--ink-3); }
+
+.card { position: absolute; width: 280px; height: 150px; padding: 10px 12px 9px; background: var(--card); border: 1px solid var(--rule); border-top: 3px solid var(--c); border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; gap: 5px; overflow: hidden; contain: strict; }
+.card.enter { animation: card-in .22s ease-out; }
+/* 缩得很小时卡片只画外框和骨架条：这时文字本来就看不清，省掉的文字排版是平移掉帧的大头 */
+.card.shell > * { display: none; }
+.card.shell { background: linear-gradient(var(--paper) 0 0) 12px 14px / 34% 12px no-repeat, linear-gradient(var(--paper) 0 0) 12px 40px / 88% 16px no-repeat, linear-gradient(var(--paper) 0 0) 12px 70px / 72% 12px no-repeat, linear-gradient(var(--paper) 0 0) 12px 90px / 80% 12px no-repeat, var(--card); }
+@keyframes card-in { from { opacity: 0; transform: translateY(-8px); } }
+.card.agent { border-top-style: dashed; border-top-color: var(--agent); }
+#vp.dragging .card, #vp.dragging .badge { cursor: grabbing; }
+.card:hover { border-color: var(--ink-2); border-top-color: var(--c); }
+.card.agent:hover { border-top-color: var(--agent); }
+.card.sel { outline: 2px solid var(--ink); outline-offset: 1px; }
+.card.hit { box-shadow: 0 0 0 3px var(--hit); }
+.card.dim { opacity: .28; }
+.card .meta { display: flex; align-items: baseline; gap: 8px; font: 12px/1 var(--sign); color: var(--ink-3); }
+.card .idx { font-size: 16px; font-weight: 600; color: var(--ink); }
+.card .ctx { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+.card .ctx i { display: block; width: 36px; height: 4px; background: var(--paper); border-radius: 2px; overflow: hidden; }
+.card .ctx i::before { content: ""; display: block; height: 100%; width: var(--p); background: var(--ink-2); }
+.card .ctx.hot i::before { background: #C8412B; }
+.card .q { font-size: 13px; font-weight: 600; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.card .a { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; flex: 1; }
+.card .a:empty::before { content: "（本轮没有文字回复）"; color: var(--ink-3); }
+.card .foot { display: flex; gap: 10px; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+.card .foot .warn { color: #B4441F; }
+.card .agt { border: 1px dashed var(--agent); background: var(--card); border-radius: 3px; padding: 0 6px; font-size: 11.5px; line-height: 17px; color: var(--ink-2); }
+.card .agt:hover, .card .agt[aria-expanded="true"] { border-color: var(--ink-2); color: var(--ink); }
+
+/* 线路面板 */
+.lines { position: fixed; left: 12px; top: 68px; width: 272px; max-height: calc(100vh - 250px); overflow: auto; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; z-index: 10; padding: 6px; }
+.lines[hidden] { display: none; }
+.lines .row { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; padding: 7px 8px; border-radius: 4px; cursor: pointer; border: 0; background: none; width: 100%; text-align: left; }
+.lines .row:hover { background: var(--paper); }
+.lines .no { font: 600 12px/22px var(--sign); color: #fff; background: var(--c); min-width: 32px; text-align: center; border-radius: 11px; grid-row: span 2; }
+.lines .t { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lines .d { font: 11.5px var(--sign); color: var(--ink-3); }
+
+/* 缩略图 */
+#mini { position: fixed; left: 12px; bottom: 12px; width: 272px; height: 150px; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; z-index: 10; cursor: crosshair; }
+.hint { position: fixed; right: 16px; bottom: 12px; font-size: 12px; color: var(--ink-3); z-index: 5; pointer-events: none; }
+.zoom { position: fixed; right: 16px; bottom: 36px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+.zoom button { width: 34px; height: 34px; border: 1px solid var(--rule); background: var(--card); border-radius: 6px; font: 600 16px/1 var(--sign); }
+
+/* 详情抽屉 */
+.drawer { position: fixed; top: 56px; right: 0; bottom: 0; width: min(640px, 100vw); background: var(--card); border-left: 1px solid var(--rule); z-index: 15; display: flex; flex-direction: column; transform: translateX(100%); transition: transform .18s ease-out; }
+.drawer.open { transform: none; }
+.dh { padding: 14px 20px 12px; border-bottom: 1px solid var(--rule); }
+.dh .l1 { display: flex; align-items: center; gap: 10px; }
+.dh .l1 .no { font: 600 13px/24px var(--sign); color: #fff; background: var(--c); min-width: 34px; padding: 0 7px; text-align: center; border-radius: 12px; }
+.dh .l1 .no.agent { background: var(--card); color: var(--ink-2); border: 1.5px dashed var(--agent); line-height: 21px; }
+.dh .l1 .lt { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.dh .l1 button { border: 1px solid var(--rule); background: var(--card); border-radius: 5px; height: 30px; min-width: 30px; padding: 0 8px; }
+.dh .l1 button:disabled { opacity: .35; cursor: default; }
+.dh .l2 { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 12.5px; color: var(--ink-2); }
+.dh .l2 b { font: 600 17px/1 var(--sign); color: var(--ink); margin-right: 2px; }
+.dh .l2 .k { color: var(--ink-3); margin-right: 4px; }
+.db { flex: 1; overflow: auto; padding: 18px 22px 40px; }
+.df { padding: 10px 20px; border-top: 1px solid var(--rule); display: flex; gap: 8px; flex-wrap: wrap; }
+.df button { border: 1px solid var(--rule); background: var(--card); border-radius: 5px; height: 32px; padding: 0 12px; }
+.df button:hover, .dh .l1 button:not(:disabled):hover { border-color: var(--ink-2); }
+
+.who { font: 600 12px var(--sign); color: var(--ink-3); margin: 18px 0 6px; letter-spacing: .02em; }
+.who:first-child { margin-top: 0; }
+.prompt { background: var(--paper); border-left: 3px solid var(--c); padding: 10px 14px; border-radius: 0 4px 4px 0; white-space: pre-wrap; word-break: break-word; font-size: 14px; max-width: 72ch; }
+.prompt.queued { border-left-style: dashed; font-size: 13.5px; margin: 10px 0; }
+.prompt.queued::before { content: "中途插话"; display: block; font-size: 11.5px; color: var(--ink-3); margin-bottom: 2px; }
+/* 长回复里屏幕外的段落先不排版（中文字形回退排版很贵，一轮几千字能占十几毫秒），滚到时再排 */
+#dBody .md > *, #dBody > :not(.md) { content-visibility: auto; contain-intrinsic-size: auto 48px; }
+.md { max-width: 72ch; font-size: 14.5px; line-height: 1.72; word-break: break-word; margin: 6px 0 12px; }
+.md p { margin: 0 0 .75em; }
+.md h1, .md h2, .md h3, .md h4 { font-size: 15.5px; margin: 1.1em 0 .4em; line-height: 1.4; }
+.md h1 { font-size: 17.5px; } .md h2 { font-size: 16.5px; }
+.md ul, .md ol { margin: 0 0 .75em; padding-left: 1.4em; }
+.md li { margin: .15em 0; }
+.md code { font: 12.5px var(--mono); background: var(--paper); padding: 1px 5px; border-radius: 3px; }
+.md pre { background: #1E2833; color: #E5ECEA; padding: 12px 14px; border-radius: 5px; overflow: auto; font: 12.5px/1.55 var(--mono); }
+.md pre code { background: none; padding: 0; color: inherit; }
+.md blockquote { margin: 0 0 .75em; padding-left: 12px; border-left: 3px solid var(--rule); color: var(--ink-2); }
+.md table { border-collapse: collapse; margin: 0 0 .9em; font-size: 13px; display: block; overflow: auto; }
+.md th, .md td { border: 1px solid var(--rule); padding: 5px 9px; text-align: left; vertical-align: top; }
+.md th { background: var(--paper); }
+.md a { color: #1B6FB0; }
+.md hr { border: 0; border-top: 1px solid var(--rule); margin: 1em 0; }
+
+/* 工具、思考的折叠块用普通按钮实现：几百个 <details> 各带一棵 shadow tree，打开大轮次时明显拖慢 */
+.fold { margin: 4px 0; font-size: 13px; }
+.fold .hd { display: flex; gap: 8px; align-items: center; }
+.fold .sum { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: baseline; padding: 4px 8px; border: 0; border-radius: 4px; background: none; color: var(--ink-2); text-align: left; }
+.fold .sum::before { content: "›"; color: var(--ink-3); transition: transform .12s; display: inline-block; width: 8px; }
+.fold.open .sum::before { transform: rotate(90deg); }
+.fold .sum:hover { background: var(--paper); }
+.fold .n { font: 600 12.5px var(--sign); color: var(--ink); min-width: 64px; }
+.fold .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; font-family: var(--mono); font-size: 12px; }
+.fold.err .n, .fold .bad { color: #B4441F; }
+.fold .bd { display: none; }
+.fold.open .bd { display: block; }
+.fold pre { margin: 4px 0 8px 16px; padding: 10px 12px; background: var(--paper); border-radius: 4px; max-height: 360px; overflow: auto; font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.fold.think pre { font-family: var(--body); font-size: 13px; color: var(--ink-2); }
+.jump { border: 1px dashed var(--agent); background: var(--card); border-radius: 4px; padding: 2px 8px; font-size: 12px; color: var(--ink-2); }
+.jump:hover { border-color: var(--ink); color: var(--ink); }
+.note { font-size: 12.5px; color: var(--ink-2); padding: 4px 8px; margin: 6px 0; border-left: 2px solid var(--rule); white-space: pre-wrap; }
+.cut { display: flex; align-items: center; gap: 10px; margin: 14px 0; font: 12px var(--sign); color: var(--ink-3); }
+.cut::before, .cut::after { content: ""; flex: 1; border-top: 1px dashed var(--ink-3); }
+.empty { position: fixed; inset: 56px 0 0; display: grid; place-items: center; color: var(--ink-2); }
+
+@media (max-width: 900px) {
+  .stats, .hint, #mini { display: none; }
+  .lines { display: none; }
+  .search { width: 40vw; }
+}
+@media (prefers-reduced-motion: reduce) { .drawer { transition: none; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1 id="pname"></h1>
+  <div class="stats" id="stats"></div>
+  <div class="spacer"></div>
+  <label class="search" title="搜索提问、回复和工具调用（快捷键 /）">
+    <input id="q" type="search" placeholder="搜索这个项目的对话" autocomplete="off">
+    <span class="count" id="qcount"></span>
+  </label>
+  <div class="group">
+    <button class="tbtn" id="tLines" aria-pressed="true" title="显示线路列表">线路</button>
+    <button class="tbtn" id="tAgents" aria-pressed="false" title="把所有子代理都画成支线；也可以点卡片上的「子代理」单独展开">展开全部子代理</button>
+    <button class="tbtn" id="tTools" aria-pressed="true" title="详情里显示工具调用">工具</button>
+    <button class="tbtn" id="tThink" aria-pressed="false" title="详情里显示思考过程">思考</button>
+  </div>
+  <div class="menu" id="exportMenu">
+    <button class="tbtn" id="exportBtn" aria-haspopup="true" aria-expanded="false">导出</button>
+    <div class="menu-list" role="menu">
+      <button data-ex="md-all" role="menuitem">整个项目 Markdown<span>所有会话，按时间排列</span></button>
+      <button data-ex="md-path" role="menuitem">选中回复的上下文链 Markdown<span>从起点一直到选中的这一轮</span></button>
+      <button data-ex="json" role="menuitem">树数据 JSON<span>可以再交给别的工具处理</span></button>
+    </div>
+  </div>
+</header>
+
+<div id="vp"><div id="world"><svg id="edges"></svg></div></div>
+<nav class="lines" id="lines" aria-label="线路列表"></nav>
+<canvas id="mini" width="544" height="300" aria-label="全局缩略图"></canvas>
+<div class="zoom"><button id="zIn" title="放大">+</button><button id="zOut" title="缩小">−</button><button id="zFit" title="显示全部">⤢</button></div>
+<div class="hint">拖动画布或滚轮移动，Shift+滚轮上下移动，Ctrl+滚轮缩放，← → 沿线路切换</div>
+
+<aside class="drawer" id="drawer" aria-label="回复详情">
+  <div class="dh">
+    <div class="l1">
+      <span class="no" id="dNo"></span><span class="lt" id="dLane"></span>
+      <button id="dPrev" title="上一站（←）">‹</button><button id="dNext" title="下一站（→）">›</button>
+      <button id="dUp" title="回到发起它的那一轮">发起处</button>
+      <button id="dClose" title="关闭（Esc）">✕</button>
+    </div>
+    <div class="l2" id="dMeta"></div>
+  </div>
+  <div class="db" id="dBody"></div>
+  <div class="df">
+    <button id="dCopy">复制本轮 Markdown</button>
+    <button id="dPath">导出到这一轮的上下文链</button>
+  </div>
+</aside>
+
+<script id="ctx-data" type="application/json">__DATA__</script>
+<!--__BULK__-->
+<script>
+/*__EXPORT_MD__*/
+
+const DATA = JSON.parse(document.getElementById('ctx-data').textContent);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// 工具输入输出按轮存在单独的块里（见 render.mjs 的 splitBulk），展开时才解析那一轮
+const chunkCache = new Map();
+let bulkText = null;
+const chunk = (b) => {
+  if (!chunkCache.has(b)) {
+    bulkText ??= document.getElementById('ctx-bulk')?.textContent || '';
+    const at = DATA.bulk?.[b], end = DATA.bulk?.[b + 1];
+    chunkCache.set(b, at == null || end == null ? [] : JSON.parse(bulkText.slice(at, end)));
+  }
+  return chunkCache.get(b);
+};
+const toolInput = (it) => it.input ?? (it.iv == null ? '' : chunk(it.b)[it.iv]);
+const toolResult = (it) => it.result ?? (it.rv == null ? '' : chunk(it.b)[it.rv]);
+let hydrated = false;
+function hydrate() { // 导出 JSON 前把正文放回条目里，导出结果和拆分前一致
+  if (hydrated) return;
+  hydrated = true;
+  for (const t of DATA.turns) for (const it of t.items) {
+    if (it.b == null) continue;
+    if (it.iv != null) it.input = chunk(it.b)[it.iv];
+    if (it.rv != null) it.result = chunk(it.b)[it.rv];
+    delete it.b; delete it.iv; delete it.rv;
+  }
+  delete DATA.bulk;
+}
+
+// ---------- 数据索引 ----------
+const byId = new Map(DATA.turns.map((t) => [t.id, t]));
+const laneOf = new Map(DATA.lanes.map((l) => [l.key, l]));
+const laneTurns = new Map();
+for (const t of DATA.turns) {
+  if (!laneTurns.has(t.lane)) laneTurns.set(t.lane, []);
+  laneTurns.get(t.lane).push(t);
+}
+const idxOf = new Map();
+for (const list of laneTurns.values()) list.forEach((t, i) => idxOf.set(t.id, i + 1));
+
+const LINE_COLORS = ['#D7263D', '#1B7FC4', '#2A9D5C', '#E08A00', '#8E44AD', '#00989A', '#D6457A', '#6B7F2A', '#C0561E', '#3D5A98', '#7A5C3E', '#0F7B6C'];
+let sn = 0;
+for (const l of DATA.lanes) {
+  if (l.kind === 'session') { l.no = `S${++sn}`; l.color = LINE_COLORS[(sn - 1) % LINE_COLORS.length]; }
+}
+for (const l of DATA.lanes) {
+  if (l.kind === 'agent') {
+    const parent = laneOf.get(l.sessionId);
+    l.color = parent?.color || '#8F9AA6';
+    const sibs = DATA.lanes.filter((x) => x.kind === 'agent' && x.sessionId === l.sessionId);
+    l.no = `${parent?.no || 'S'}·${sibs.indexOf(l) + 1}`;
+  }
+}
+
+const state = { agents: false, openAgents: new Set(), tools: true, think: false, lines: true, sel: null, hits: [], hitSet: new Set(), hitPos: -1 };
+const W = 280, H = 150, COL = 320, ROW_RAIL = 22, ROW_CARD = 44, ROW = 44 + H + 34;
+const ROOT_X = 0, FIRST_COL_X = 300;
+
+const fmtTime = (ts) => {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const fmtDur = (a, b) => {
+  const s = Math.max(0, (new Date(b) - new Date(a)) / 1000);
+  if (s < 60) return `${Math.round(s)} 秒`;
+  if (s < 3600) return `${Math.round(s / 60)} 分钟`;
+  return `${(s / 3600).toFixed(1)} 小时`;
+};
+const kfmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}k` : String(n || 0));
+const ctxLimit = (t) => ((t.models || []).some((m) => /\[1m\]/i.test(m)) || t.ctx > 200000 ? 1000000 : 200000);
+
+// ---------- 树与布局 ----------
+let layout = null;
+
+// 子代理默认收起：发起它的那一轮被展开（或全局展开）时才画出来
+function laneShown(lane, memo = new Map()) {
+  if (lane.kind !== 'agent') return true;
+  if (memo.has(lane.key)) return memo.get(lane.key);
+  const origin = lane.parentTurn && byId.get(lane.parentTurn);
+  const ok = !!origin && (state.agents || state.openAgents.has(origin.id)) && laneShown(laneOf.get(origin.lane), memo);
+  memo.set(lane.key, ok);
+  return ok;
+}
+
+function buildLayout() {
+  const memo = new Map();
+  const visible = DATA.turns.filter((t) => laneShown(laneOf.get(t.lane), memo));
+  const vis = new Set(visible.map((t) => t.id));
+  const kids = new Map([['ROOT', []]]);
+  const parentOf = new Map();
+  for (const t of visible) {
+    let p = t.parent && vis.has(t.parent) ? t.parent : null;
+    const lane = laneOf.get(t.lane);
+    if (!p && !t.parent && lane?.kind === 'agent' && vis.has(lane.parentTurn)) p = lane.parentTurn;
+    const key = p || 'ROOT';
+    parentOf.set(t.id, key);
+    if (!kids.has(key)) kids.set(key, []);
+    kids.get(key).push(t);
+  }
+  // 同一线路的下一站排在最前（沿横轴延续），其余分叉按时间往下排
+  for (const [key, list] of kids) {
+    const pl = key === 'ROOT' ? null : byId.get(key).lane;
+    // 时间是 ISO 字符串，直接按字符比较；localeCompare 走 ICU，上千轮时能占一半布局时间
+    const ta = (x) => x.t0 || '';
+    list.sort((a, b) => (a.lane === pl ? 0 : 1) - (b.lane === pl ? 0 : 1) || (ta(a) < ta(b) ? -1 : ta(a) > ta(b) ? 1 : 0));
+  }
+
+  const pos = new Map();
+  const rows = []; // 每行已占用的列区间
+  const rowEnd = []; // 每行占用到的最右一列：新区间在它右边就不用逐个比了（按时间摆放时绝大多数是这种）
+  const branches = [];
+  const free = (r, c0, c1) => !(rowEnd[r] >= c0) || !rows[r].some(([a, b]) => a <= c1 && c0 <= b);
+  const findRow = (minRow, c0, c1) => { let r = minRow; while (!free(r, c0, c1)) r++; return r; };
+
+  const place = (start, parentRow, col) => {
+    const chain = [start];
+    for (;;) {
+      const last = chain[chain.length - 1];
+      const next = (kids.get(last.id) || []).find((c) => c.lane === last.lane);
+      if (!next) break;
+      chain.push(next);
+    }
+    const c1 = col + chain.length - 1;
+    const row = findRow(Math.max(0, parentRow + 1), col - 1, c1);
+    (rows[row] ||= []).push([col - 1, c1]);
+    rowEnd[row] = Math.max(rowEnd[row] ?? -Infinity, c1);
+    chain.forEach((t, i) => pos.set(t.id, { col: col + i, row }));
+    branches.push({ lane: start.lane, first: start, last: chain[chain.length - 1], row, col, parent: parentOf.get(start.id) });
+    const inChain = new Set(chain);
+    for (const t of chain) {
+      for (const c of kids.get(t.id) || []) if (!inChain.has(c)) place(c, row, pos.get(t.id).col + 1);
+    }
+  };
+  for (const s of kids.get('ROOT')) place(s, -1, 0);
+
+  const x = (col) => FIRST_COL_X + col * COL;
+  const y = (row) => 70 + row * ROW;
+  let maxCol = 0, maxRow = 0;
+  for (const p of pos.values()) { maxCol = Math.max(maxCol, p.col); maxRow = Math.max(maxRow, p.row); }
+  layout = { pos, kids, parentOf, branches, x, y, visible,
+    width: x(maxCol) + W + 200, height: y(maxRow) + ROW + 60 };
+}
+
+function stationOf(id) {
+  const p = layout.pos.get(id);
+  return { x: layout.x(p.col) + 22, y: layout.y(p.row) + ROW_RAIL };
+}
+
+// 卡片只建一次：重新布局（展开子代理等）时只挪位置，省掉重建 DOM 和整页重新排版。
+// 先建空壳（.shell），近看时再按帧分批填文字（fillCard），见 upgradeCards
+const cardEls = new Map();
+const badgeEls = new Map();  // 线路牌也按视口挂载，键是线路 id
+let badges = [];
+function buildCard(t) {
+  const lane = laneOf.get(t.lane);
+  const el = document.createElement('div');
+  el.className = `card shell${lane.kind === 'agent' ? ' agent' : ''}`;
+  el.dataset.id = t.id;
+  el.style.setProperty('--c', lane.color);
+  return el;
+}
+function fillCard(el, t) {
+  const pct = Math.min(100, (t.ctx / ctxLimit(t)) * 100);
+  const toolN = Object.values(t.tools).reduce((a, b) => a + b, 0);
+  const foot = [];
+  if (toolN) foot.push(`<span>工具 ${toolN}</span>`);
+  if (t.agents.length) foot.push(`<button class="agt" data-agt="${esc(t.id)}"></button>`);
+  if (t.compactions.length) foot.push(`<span>压缩 ${t.compactions.length} 次</span>`);
+  if (t.items.some((i) => i.k === 'queued')) foot.push('<span>含插话</span>');
+  if (t.interrupted) foot.push('<span class="warn">已中断</span>');
+  if (t.errors) foot.push(`<span class="warn">出错 ${t.errors}</span>`);
+  // 卡片只露两三行，没必要把几千字的全文塞进去排版
+  el.innerHTML = `<div class="meta"><span class="idx">${idxOf.get(t.id)}</span><span>${fmtTime(t.t0)}</span>`
+    + `<span class="ctx${pct > 80 ? ' hot' : ''}" title="上下文占用 ${t.ctx.toLocaleString()} tokens">${kfmt(t.ctx)}<i style="--p:${pct}%"></i></span></div>`
+    + `<div class="q">${esc(t.prompt.slice(0, 200))}</div><div class="a">${esc(plain(t.items.findLast((i) => i.k === 'text')?.text.slice(0, 800)).slice(0, 240))}</div><div class="foot">${foot.join('')}</div>`;
+  el.dataset.full = '1';
+}
+function syncAgentButton(el, t) {
+  const b = el.querySelector('.agt');
+  if (!b) return;
+  const open = state.agents || state.openAgents.has(t.id);
+  if (b.dataset.open === String(open)) return;
+  b.dataset.open = String(open);
+  b.setAttribute('aria-expanded', String(open));
+  b.title = `${open ? '收起' : '展开'}这一轮派出的子代理`;
+  b.textContent = `子代理 ${t.agents.length} ${open ? '▴' : '▾'}`;
+}
+
+let rendered = false;
+function render() {
+  const world = $('world');
+  world.querySelectorAll('.terminus').forEach((n) => n.remove());
+  world.style.width = `${layout.width}px`;
+  world.style.height = `${layout.height}px`;
+  const svg = $('edges');
+  svg.setAttribute('width', layout.width);
+  svg.setAttribute('height', layout.height);
+
+  const paths = [], stations = [];
+  const rootKids = layout.kids.get('ROOT') || [];
+  const barX = FIRST_COL_X - 44;
+
+  // 起点站：项目本身
+  const term = document.createElement('div');
+  term.className = 'terminus';
+  term.style.left = `${ROOT_X + 20}px`;
+  term.style.top = `${layout.y(0)}px`;
+  term.innerHTML = `<div class="name${DATA.project.name.length > 12 ? ' long' : ''}">${esc(DATA.project.name)}</div><div class="path">${esc(DATA.project.cwd || DATA.project.dir)}</div>`;
+  world.appendChild(term);
+  if (rootKids.length) {
+    const ys = rootKids.map((t) => stationOf(t.id).y);
+    paths.push(`<path d="M${barX} ${Math.min(...ys) - 14}V${Math.max(...ys) + 14}" stroke="#17202B" stroke-width="10" stroke-linecap="round"/>`);
+  }
+
+  const laneStroke = (lane) => (lane.kind === 'agent'
+    ? `stroke="${lane.color}" stroke-opacity=".55" stroke-width="3" stroke-dasharray="7 6"`
+    : `stroke="${lane.color}" stroke-width="7"`);
+
+  const nextBadges = [];
+  for (const b of layout.branches) {
+    const lane = laneOf.get(b.lane);
+    const s = stationOf(b.first.id);
+    let d;
+    if (b.parent === 'ROOT') d = `M${barX} ${s.y}H${s.x}`;
+    else {
+      const p = stationOf(b.parent);
+      const mx = p.x + COL / 2 + 8, r = 14;
+      d = p.y === s.y ? `M${p.x} ${p.y}H${s.x}`
+        : `M${p.x} ${p.y}H${mx - r}L${mx} ${p.y + r}V${s.y - r}L${mx + r} ${s.y}H${s.x}`;
+    }
+    const end = stationOf(b.last.id);
+    if (end.x > s.x) d += `M${s.x} ${s.y}H${end.x}`;
+    paths.push(`<path d="${d}" fill="none" ${laneStroke(lane)} stroke-linejoin="round" stroke-linecap="round"/>`);
+
+    nextBadges.push({ b, x: s.x + 16, y: s.y - 36 });
+  }
+  const keep = new Set(nextBadges.map((n) => n.b.lane));
+  for (const [id, el] of badgeEls) if (!keep.has(id) && el.isConnected) el.remove();
+  badges = nextBadges;
+
+  // 站点互不重叠，同样式的圆合成一条 path（每个圆两段弧）：上千个 <circle> 解析和排版都慢，合并后只剩几十个元素
+  const shown = new Set(), dots = new Map(), rings = [];
+  const circle = (x, y, r) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
+  for (const t of layout.visible) {
+    const lane = laneOf.get(t.lane);
+    const st = stationOf(t.id);
+    if (t.compactions.length) rings.push(circle(st.x, st.y, 12));
+    const r = lane.kind === 'agent' ? 5 : 7.5;
+    const key = `fill="${t.interrupted ? '#EEF1F0' : '#fff'}" stroke="${lane.kind === 'agent' ? '#8F9AA6' : lane.color}" data-r="${r}"`;
+    if (!dots.has(key)) dots.set(key, []);
+    dots.get(key).push(circle(st.x, st.y, r));
+    shown.add(t.id);
+  }
+  if (rings.length) stations.push(`<path d="${rings.join('')}" fill="none" stroke="#17202B" stroke-width="1.5" stroke-dasharray="3 3"/>`);
+  for (const [key, ds] of dots) stations.push(`<path d="${ds.join('')}" ${key} stroke-width="3.5"/>`);
+  for (const [id, el] of cardEls) if (!shown.has(id) && el.isConnected) el.remove();
+  svg.innerHTML = paths.join('') + stations.join('');
+  cardRangeKey = '';
+  updateCards(rendered, true);
+  upgradeCards(rendered ? 40 : Infinity);  // 首屏一次填完；之后的重新布局也多填一些，剩下的按帧补
+  rendered = true;
+  drawMiniBase();
+  drawMini();
+}
+
+// 卡片虚拟化：上千轮时不能全挂在 DOM 里，只挂视口附近的（线路和站点还是全画，它们便宜）
+let cardRangeKey = '';
+const BADGE_W = 640;  // 线路牌宽度的上限（标题最宽 420 加编号和日期），只用来判断是否进入视口
+function buildBadge(b) {
+  const lane = laneOf.get(b.lane);
+  const el = document.createElement('div');
+  el.className = `badge${lane.kind === 'agent' ? ' agent' : ''}`;
+  el.style.setProperty('--c', lane.color);
+  const sub = lane.kind === 'agent' ? lane.agentType : `${fmtTime(lane.start)}  ${lane.turnCount} 轮`;
+  el.innerHTML = `<span class="no">${esc(lane.no)}</span><span class="t">${esc(lane.title)}</span><span class="d">${esc(sub)}</span>`;
+  el.title = lane.title;
+  return el;
+}
+function decorate(el, t) {
+  const hits = state.hitSet;
+  el.classList.toggle('hit', !!hits && hits.has(t.id));
+  el.classList.toggle('dim', !!state.q && !(hits && hits.has(t.id)));
+  el.classList.toggle('sel', t.id === state.sel);
+  syncAgentButton(el, t);
+}
+const FAR_K = 0.4, FILL_PER_FRAME = 8;
+let far = false, fillReq = 0;
+function setFar(k) {
+  const f = k < FAR_K;
+  if (f === far) return;
+  far = f;
+  cardRangeKey = '';
+  // 缩远时已经排好版的卡片保持原样：整批退回骨架要重算样式，正好卡在缩放那一帧；只有新挂上的才用骨架
+  if (!far) scheduleUpgrade();
+}
+function scheduleUpgrade() { if (!fillReq && !far) fillReq = requestAnimationFrame(() => upgradeCards(FILL_PER_FRAME)); }
+// 把视口里的空壳卡片换成完整卡片：离视口中心近的先填，每帧限量，剩下的下一帧继续
+function upgradeCards(budget) {
+  cancelAnimationFrame(fillReq);
+  fillReq = 0;
+  if (far) return;
+  const shells = [...world.getElementsByClassName('shell')];
+  if (!shells.length) return;
+  const cx = (vpSize.w / 2 - view.x) / view.k, cy = (vpSize.h / 2 - view.y) / view.k;
+  const dist = (el) => Math.abs(parseFloat(el.style.left) + W / 2 - cx) + Math.abs(parseFloat(el.style.top) + H / 2 - cy);
+  if (shells.length > budget) shells.sort((a, b) => dist(a) - dist(b));
+  for (const el of shells.slice(0, budget)) {
+    const t = byId.get(el.dataset.id);
+    if (!el.dataset.full) fillCard(el, t);
+    el.classList.remove('shell');
+    syncAgentButton(el, t);
+  }
+  if (shells.length > budget) scheduleUpgrade();
+}
+// 已挂着的卡片由 applyMarks 维护高亮/选中状态，平移时只给新挂上的卡片补；重新布局时（every）全部过一遍
+function updateCards(fade, every = false) {
+  const pad = 300;
+  const wx0 = (-view.x - pad) / view.k, wx1 = (vpSize.w - view.x + pad) / view.k;
+  const wy0 = (-view.y - pad) / view.k, wy1 = (vpSize.h - view.y + pad) / view.k;
+  const frag = document.createDocumentFragment();
+  const anim = fade && !reduceMotion.matches;
+  for (const t of layout.visible) {
+    const p = layout.pos.get(t.id);
+    const x = layout.x(p.col), y = layout.y(p.row) + ROW_CARD;
+    const old = cardEls.get(t.id);
+    if (x > wx1 || x + W < wx0 || y > wy1 || y + H < wy0) { if (old?.isConnected) old.remove(); continue; }
+    const mount = !old?.isConnected;
+    if (!mount && !every) continue;
+    const el = old || buildCard(t);
+    if (!old) cardEls.set(t.id, el);
+    const left = `${x}px`, top = `${y}px`;
+    if (el.style.left !== left) el.style.left = left;
+    if (el.style.top !== top) el.style.top = top;
+    decorate(el, t);
+    if (mount) {
+      if (far) el.classList.add('shell');
+      // 只给「展开子代理」这类布局变化里第一次出现的卡片淡入；平移滚出来的不闪
+      if (anim && !el.dataset.mounted) { el.classList.add('enter'); el.addEventListener('animationend', () => el.classList.remove('enter'), { once: true }); }
+      el.dataset.mounted = '1';
+      frag.appendChild(el);
+    }
+  }
+  for (const { b, x, y } of badges) {
+    const old = badgeEls.get(b.lane);
+    if (x > wx1 || x + BADGE_W < wx0 || y > wy1 || y + 24 < wy0) { if (old?.isConnected) old.remove(); continue; }
+    if (old?.isConnected && !every) continue;
+    const el = old || buildBadge(b);
+    if (!old) badgeEls.set(b.lane, el);
+    el.dataset.first = b.first.id;
+    const left = `${x}px`, top = `${y}px`;
+    if (el.style.left !== left) el.style.left = left;
+    if (el.style.top !== top) el.style.top = top;
+    if (!el.isConnected) frag.appendChild(el);
+  }
+  world.appendChild(frag);
+  if (!far && world.getElementsByClassName('shell').length) scheduleUpgrade();
+}
+
+// ---------- Markdown ----------
+function plain(md) {
+  return String(md || '')
+    .replace(/```[\s\S]*?(```|$)/g, ' [代码] ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '[图片]')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '· ')
+    .replace(/\*\*|__|~~/g, '')
+    .replace(/\|/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 400);
+}
+
+function inline(s) {
+  const codes = [];
+  s = s.replace(/`([^`\n]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
+  s = esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, '$1<em>$2</em>')
+    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, url) => (/^(https?:|mailto:|#|\.{0,2}\/)/.test(url) || !/^[a-z]+:/i.test(url)
+      ? `<a href="${url}" target="_blank" rel="noopener">${text}</a>` : text));
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[i])}</code>`);
+}
+
+function md(src) {
+  const lines = String(src || '').replace(/\r/g, '').split('\n');
+  const out = [];
+  let i = 0;
+  const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
+  const isTableStart = (j) => lines[j].includes('|') && j + 1 < lines.length && isTableSep(lines[j + 1]);
+  const cells = (l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => inline(c.trim()));
+  while (i < lines.length) {
+    const l = lines[i];
+    const fence = l.match(/^\s*(```+|~~~+)\s*([\w+-]*)/);
+    if (fence) {
+      const buf = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith(fence[1])) buf.push(lines[i++]);
+      i++;
+      out.push(`<pre><code>${esc(buf.join('\n'))}</code></pre>`);
+      continue;
+    }
+    if (!l.trim()) { i++; continue; }
+    const h = l.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { const n = Math.min(4, h[1].length); out.push(`<h${n}>${inline(h[2])}</h${n}>`); i++; continue; }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { out.push('<hr>'); i++; continue; }
+    if (isTableStart(i)) {
+      const head = cells(l);
+      i += 2;
+      const body = [];
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) body.push(cells(lines[i++]));
+      out.push(`<table><thead><tr>${head.map((c) => `<th>${c}</th>`).join('')}</tr></thead><tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
+      continue;
+    }
+    if (/^\s*>/.test(l)) {
+      const buf = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ''));
+      out.push(`<blockquote>${md(buf.join('\n'))}</blockquote>`);
+      continue;
+    }
+    const li = l.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (li) {
+      const ordered = /\d/.test(li[2]);
+      const items = [];
+      while (i < lines.length) {
+        const m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+        if (m && m[1].length <= li[1].length + 1) { items.push([m[3]]); i++; continue; }
+        if (lines[i].trim() && /^\s{2,}/.test(lines[i]) && items.length) { items[items.length - 1].push(lines[i].trim()); i++; continue; }
+        break;
+      }
+      const tag = ordered ? 'ol' : 'ul';
+      out.push(`<${tag}>${items.map((it) => `<li>${inline(it[0])}${it.length > 1 ? md(it.slice(1).join('\n')) : ''}</li>`).join('')}</${tag}>`);
+      continue;
+    }
+    const buf = [];
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|\s*```|\s*>|\s*([-*+]|\d+[.)])\s)/.test(lines[i])
+      && !isTableStart(i)) buf.push(lines[i++]);
+    if (!buf.length) buf.push(lines[i++]);
+    out.push(`<p>${buf.map(inline).join('<br>')}</p>`);
+  }
+  return out.join('');
+}
+
+// ---------- 视图：平移 / 缩放 ----------
+// 所有移动都先改 view，再由 applyView() 合并到下一帧统一写入，一帧最多写一次 transform。
+// 画布平时就是独立的合成层，平移只需合成、不重绘；缩放停下后再按新比例重新栅格化一次，文字保持清晰。
+const vp = $('vp'), world = $('world');
+// 视口尺寸缓存起来：平移途中读 clientWidth，会在刚挂上新卡片时强制同步重排一次
+const vpSize = { w: vp.clientWidth, h: vp.clientHeight };
+const view = { x: 0, y: 0, k: 0.9 };
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const cam = { aim: null, glide: null, req: 0, last: 0 };
+// 正在朝某个缩放值缓动时，新的缩放操作要基于那个目标值叠加，而不是当前帧的中间值
+const aimK = () => (cam.aim?.anchor ? cam.aim.k : view.k);
+let paintedK = view.k, rasterTimer = 0;
+
+function paintView() {
+  world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
+  // 平移/缩放跨过一格（120px）才重算该挂哪些卡片，其余帧只动 transform
+  if (layout) {
+    setFar(view.k);
+    const key = `${Math.round(view.x / 120)}|${Math.round(view.y / 120)}|${Math.round(view.k * 50)}`;
+    if (key !== cardRangeKey) { cardRangeKey = key; updateCards(false); }
+  }
+  drawMini();
+  if (view.k !== paintedK) {
+    paintedK = view.k;
+    clearTimeout(rasterTimer);
+    rasterTimer = setTimeout(() => {
+      world.style.willChange = 'auto';
+      requestAnimationFrame(() => { world.style.willChange = ''; });
+    }, 160);
+  }
+}
+function applyView() {
+  if (!cam.req) cam.req = requestAnimationFrame(tick);
+}
+function tick(now) {
+  cam.req = 0;
+  const dt = cam.last ? Math.min(48, now - cam.last) : 16;
+  cam.last = now;
+  if (cam.aim) {
+    // 指数逼近目标：连续滚动、连按方向键时会从当前位置平滑地改道，不会重新起步
+    const a = cam.aim, f = 1 - Math.exp(-dt / 70);
+    if (a.anchor) {
+      view.k += (a.k - view.k) * f;
+      view.x = a.anchor.mx - a.anchor.wx * view.k;
+      view.y = a.anchor.my - a.anchor.wy * view.k;
+      if (Math.abs(a.k - view.k) < 0.0005) { view.k = a.k; view.x = a.anchor.mx - a.anchor.wx * a.k; view.y = a.anchor.my - a.anchor.wy * a.k; cam.aim = null; }
+    } else {
+      view.x += (a.x - view.x) * f;
+      view.y += (a.y - view.y) * f;
+      if (Math.abs(a.x - view.x) < 0.4 && Math.abs(a.y - view.y) < 0.4) { view.x = a.x; view.y = a.y; cam.aim = null; }
+    }
+  } else if (cam.glide) {
+    // 松手后的惯性：速度按指数衰减
+    const g = cam.glide;
+    view.x += g.vx * dt;
+    view.y += g.vy * dt;
+    const decay = Math.exp(-dt / 320);
+    g.vx *= decay; g.vy *= decay;
+    if (Math.hypot(g.vx, g.vy) < 0.015) cam.glide = null;
+  }
+  paintView();
+  if (cam.aim || cam.glide) applyView();
+  else cam.last = 0;
+}
+function stopMotion() { cam.aim = null; cam.glide = null; }
+function aimAt(x, y) {
+  cam.glide = null;
+  if (reduceMotion.matches) { cam.aim = null; view.x = x; view.y = y; }
+  else cam.aim = { x, y };
+  applyView();
+}
+function zoomAt(k, mx, my, smooth) {
+  cam.glide = null;
+  k = Math.max(0.12, Math.min(2, k));
+  if (!smooth || reduceMotion.matches) {
+    // 先落到正在进行的缩放终点，再以鼠标所在点为中心缩放
+    if (cam.aim?.anchor) { view.k = cam.aim.k; view.x = cam.aim.anchor.mx - cam.aim.anchor.wx * view.k; view.y = cam.aim.anchor.my - cam.aim.anchor.wy * view.k; }
+    cam.aim = null;
+    view.x = mx - ((mx - view.x) * k) / view.k;
+    view.y = my - ((my - view.y) * k) / view.k;
+    view.k = k;
+  } else {
+    const same = cam.aim?.anchor && Math.abs(cam.aim.anchor.mx - mx) < 3 && Math.abs(cam.aim.anchor.my - my) < 3;
+    const anchor = same ? cam.aim.anchor : { mx, my, wx: (mx - view.x) / view.k, wy: (my - view.y) / view.k };
+    cam.aim = { k, anchor };
+  }
+  applyView();
+}
+function fit() {
+  const w = vpSize.w, h = vpSize.h;
+  const k = Math.max(0.12, Math.min(1, (w - 40) / layout.width, (h - 40) / layout.height));
+  stopMotion();
+  view.k = k; view.x = 20; view.y = 20;
+  applyView();
+}
+// 两侧浮层的宽度直接按 CSS 算，不去读 offsetWidth——刚换完详情内容时读它会强制整页同步排版
+function viewInsets() {
+  const wide = innerWidth > 900;
+  return {
+    left: state.lines && wide ? 12 + 272 : 0,
+    right: $('drawer').classList.contains('open') ? Math.min(640, innerWidth) : 0,
+  };
+}
+function centerOn(id, smooth) {
+  const p = layout.pos.get(id);
+  if (!p) return;
+  const cx = layout.x(p.col) + W / 2, cy = layout.y(p.row) + ROW_CARD + H / 2;
+  // 在左侧线路面板和右侧详情之间的空白区域居中
+  const { left, right } = viewInsets();
+  const tx = (left + vpSize.w - right) / 2 - cx * view.k, ty = vpSize.h / 2 - cy * view.k;
+  if (smooth) aimAt(tx, ty);
+  else { stopMotion(); view.x = tx; view.y = ty; applyView(); }
+}
+function isVisible(id) {
+  const p = layout.pos.get(id);
+  const x0 = layout.x(p.col) * view.k + view.x, y0 = (layout.y(p.row) + ROW_CARD) * view.k + view.y;
+  const { left, right } = viewInsets();
+  return x0 > left && y0 > 0 && x0 + W * view.k < vpSize.w - right && y0 + H * view.k < vpSize.h;
+}
+
+// 鼠标滚轮一格是几十上百像素的跳变，要缓动；触控板本身连续，直接跟手，并且两个方向都能滑
+const isMouseWheel = (e) => e.deltaMode !== 0 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 50);
+vp.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const r = vp.getBoundingClientRect();
+  const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? vpSize.h : 1;
+  const dx = e.deltaX * unit, dy = e.deltaY * unit;
+  const mouse = isMouseWheel(e);
+  if (e.ctrlKey || e.metaKey) { zoomAt(aimK() * Math.exp(-dy * (mouse ? 0.0015 : 0.01)), e.clientX - r.left, e.clientY - r.top, mouse); return; }
+  if (!mouse) { stopMotion(); view.x -= dx; view.y -= dy; applyView(); return; }
+  const base = cam.aim && !cam.aim.anchor ? cam.aim : view;
+  if (e.shiftKey) aimAt(base.x - dx, base.y - (dy || dx));
+  else aimAt(base.x - dx - dy, base.y);
+}, { passive: false });
+
+// 拖动：超过 4 像素才算拖，之前一直按点击处理；松手时按最近 100ms 的速度继续滑一段
+let drag = null;
+vp.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  stopMotion();
+  drag = {
+    id: e.pointerId, x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false,
+    target: e.target.closest('.card'), agt: e.target.closest('.agt'), badge: e.target.closest('.badge'),
+    samples: [[e.timeStamp, e.clientX, e.clientY]],
+  };
+});
+vp.addEventListener('pointermove', (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved) {
+    if (Math.hypot(dx, dy) <= 4) return;
+    drag.moved = true;
+    vp.setPointerCapture(e.pointerId);
+    vp.classList.add('dragging');
+  }
+  view.x = drag.vx + dx; view.y = drag.vy + dy;
+  const s = drag.samples;
+  s.push([e.timeStamp, e.clientX, e.clientY]);
+  while (s.length > 2 && e.timeStamp - s[0][0] > 100) s.shift();
+  applyView();
+});
+function endDrag(e, cancelled) {
+  if (!drag || e.pointerId !== drag.id) return;
+  const d = drag;
+  drag = null;
+  vp.classList.remove('dragging');
+  if (d.moved) {
+    const s = d.samples, [t0, x0, y0] = s[0];
+    const dt = e.timeStamp - t0;
+    if (!cancelled && !reduceMotion.matches && dt > 0 && e.timeStamp - s[s.length - 1][0] < 60) {
+      const vx = (e.clientX - x0) / dt, vy = (e.clientY - y0) / dt;
+      if (Math.hypot(vx, vy) > 0.25) { cam.glide = { vx, vy }; applyView(); }
+    }
+    return;
+  }
+  if (cancelled) return;
+  if (d.agt) toggleAgentsOf(d.agt.dataset.agt);
+  else if (d.target) select(d.target.dataset.id, false);
+  else if (d.badge) select(d.badge.dataset.first, true);
+}
+vp.addEventListener('pointerup', (e) => endDrag(e, false));
+vp.addEventListener('pointercancel', (e) => endDrag(e, true));
+$('zIn').onclick = () => zoomAt(aimK() * 1.25, vpSize.w / 2, vpSize.h / 2, true);
+$('zOut').onclick = () => zoomAt(aimK() / 1.25, vpSize.w / 2, vpSize.h / 2, true);
+$('zFit').onclick = fit;
+
+// ---------- 缩略图 ----------
+const mini = $('mini'), mctx = mini.getContext('2d');
+const miniBase = document.createElement('canvas'); // 卡片点阵只在布局变化时画一次，每帧只叠视口框
+let miniScale = 1;
+const miniRect = (p) => [layout.x(p.col) * miniScale, (layout.y(p.row) + ROW_CARD) * miniScale, Math.max(2, W * miniScale), Math.max(2, H * miniScale * 0.6)];
+function drawMiniBase() {
+  if (!layout) return;
+  miniBase.width = mini.width;
+  miniBase.height = mini.height;
+  const b = miniBase.getContext('2d');
+  miniScale = Math.min(mini.width / layout.width, mini.height / layout.height);
+  b.globalAlpha = 0.8;
+  for (const t of layout.visible) {
+    const lane = laneOf.get(t.lane);
+    b.fillStyle = lane.kind === 'agent' ? '#B9C2CA' : lane.color;
+    b.fillRect(...miniRect(layout.pos.get(t.id)));
+  }
+}
+// 缩略图只在窄屏被 CSS 藏起来；用媒体查询判断，别在每帧读布局——刚挂上新卡片时那一读会强制整页重排
+const miniHidden = matchMedia('(max-width: 900px)');
+function drawMini() {
+  if (!layout || miniHidden.matches) return;
+  mctx.clearRect(0, 0, mini.width, mini.height);
+  mctx.drawImage(miniBase, 0, 0);
+  if (state.sel && layout.pos.has(state.sel)) {
+    const lane = laneOf.get(byId.get(state.sel).lane);
+    mctx.fillStyle = lane.color;
+    mctx.fillRect(...miniRect(layout.pos.get(state.sel)));
+  }
+  mctx.strokeStyle = '#17202B';
+  mctx.lineWidth = 2;
+  mctx.strokeRect((-view.x / view.k) * miniScale, (-view.y / view.k) * miniScale, (vpSize.w / view.k) * miniScale, (vpSize.h / view.k) * miniScale);
+}
+function miniJump(e) {
+  const r = mini.getBoundingClientRect();
+  const wx = ((e.clientX - r.left) * (mini.width / r.width)) / miniScale;
+  const wy = ((e.clientY - r.top) * (mini.height / r.height)) / miniScale;
+  view.x = vpSize.w / 2 - wx * view.k;
+  view.y = vpSize.h / 2 - wy * view.k;
+  applyView();
+}
+let miniDrag = false;
+mini.addEventListener('pointerdown', (e) => { stopMotion(); miniDrag = true; mini.setPointerCapture(e.pointerId); miniJump(e); });
+mini.addEventListener('pointermove', (e) => miniDrag && miniJump(e));
+mini.addEventListener('pointerup', () => { miniDrag = false; });
+
+// ---------- 选中与详情 ----------
+function laneNeighbors(t) {
+  const list = laneTurns.get(t.lane);
+  const i = list.indexOf(t);
+  return { prev: list[i - 1] || null, next: list[i + 1] || null };
+}
+
+function relayout(keepId) {
+  // 重新布局后让某张卡片停在屏幕上原来的位置，避免画面跳动
+  const before = keepId && layout.pos.has(keepId) ? stationOf(keepId) : null;
+  if (before) stopMotion();
+  buildLayout();
+  render();
+  if (before && layout.pos.has(keepId)) {
+    const after = stationOf(keepId);
+    view.x -= (after.x - before.x) * view.k;
+    view.y -= (after.y - before.y) * view.k;
+    paintView();  // 和新布局同一帧生效，否则会闪一下
+  }
+}
+
+function toggleAgentsOf(turnId) {
+  if (state.agents) { state.agents = false; $('tAgents').setAttribute('aria-pressed', 'false'); for (const t of DATA.turns) if (t.agents.length) state.openAgents.add(t.id); }
+  if (state.openAgents.has(turnId)) state.openAgents.delete(turnId);
+  else state.openAgents.add(turnId);
+  relayout(turnId);
+}
+
+function revealLane(laneKey) {
+  let lane = laneOf.get(laneKey);
+  let changed = false;
+  while (lane && lane.kind === 'agent' && lane.parentTurn) {
+    if (!state.openAgents.has(lane.parentTurn)) { state.openAgents.add(lane.parentTurn); changed = true; }
+    lane = laneOf.get(byId.get(lane.parentTurn)?.lane);
+  }
+  if (changed) relayout(state.sel);
+}
+
+function select(id, center) {
+  const t = byId.get(id);
+  if (!t) return;
+  if (!layout.pos.has(id)) revealLane(t.lane);
+  if (!layout.pos.has(id)) return;
+  state.sel = id;
+  applyMarks();
+  openDrawer(t);
+  if (center || !isVisible(id)) centerOn(id, true);
+  drawMini();
+}
+
+function openDrawer(t) {
+  const lane = laneOf.get(t.lane);
+  const drawer = $('drawer');
+  drawer.style.setProperty('--c', lane.color);
+  const no = $('dNo');
+  no.textContent = lane.no;
+  no.className = `no${lane.kind === 'agent' ? ' agent' : ''}`;
+  $('dLane').textContent = lane.kind === 'agent' ? `${lane.agentType} 子代理：${lane.title}` : lane.title;
+  $('dLane').title = lane.title;
+  const { prev, next } = laneNeighbors(t);
+  $('dPrev').disabled = !prev;
+  $('dNext').disabled = !next;
+  $('dPrev').onclick = () => prev && select(prev.id, true);
+  $('dNext').onclick = () => next && select(next.id, true);
+  const origin = lane.kind === 'agent' ? lane.parentTurn : null;
+  $('dUp').hidden = !origin;
+  $('dUp').onclick = () => origin && select(origin, true);
+
+  const total = laneTurns.get(t.lane).length;
+  const meta = [
+    `<span><b>${idxOf.get(t.id)}</b><span class="k">/ ${total} 轮</span></span>`,
+    `<span><span class="k">开始</span>${fmtTime(t.t0)}</span>`,
+    `<span><span class="k">用时</span>${fmtDur(t.t0, t.t1)}</span>`,
+    `<span><span class="k">上下文</span>${t.ctx.toLocaleString()}</span>`,
+    `<span><span class="k">输出</span>${t.out.toLocaleString()}</span>`,
+  ];
+  if (t.model) meta.push(`<span><span class="k">模型</span>${esc(t.models.join('、'))}</span>`);
+  if (lane.branch && lane.kind === 'session') meta.push(`<span><span class="k">分支</span>${esc(lane.branch)}</span>`);
+  $('dMeta').innerHTML = meta.join('');
+
+  // 工具输入输出、思考过程默认折叠，展开时才生成内容：大轮次里动辄几百个工具调用，一次全塞进去会卡住点击
+  const lazy = [];
+  const body = [`<div class="who">你</div><div class="prompt">${esc(t.prompt)}</div><div class="who">Claude</div>`];
+  let pendingTools = 0;
+  const flushTools = () => {
+    if (pendingTools) { body.push(`<div class="note">调用了 ${pendingTools} 次工具（打开顶栏「工具」可查看）</div>`); pendingTools = 0; }
+  };
+  for (const it of t.items) {
+    if (it.k === 'tool' && !state.tools) { pendingTools++; continue; }
+    if (it.k === 'think' && !state.think) continue;
+    flushTools();
+    if (it.k === 'text') body.push(`<div class="md">${md(it.text)}</div>`);
+    else if (it.k === 'think') body.push(`<div class="fold think" data-lazy="${lazy.push(it) - 1}"><div class="hd"><button class="sum" aria-expanded="false">思考过程</button></div></div>`);
+    else if (it.k === 'tool') {
+      const jump = it.agentLane && laneOf.has(it.agentLane) ? `<button class="jump" data-lane="${esc(it.agentLane)}">打开子代理</button>` : '';
+      const lz = it.iv != null || it.rv != null || it.input || it.result ? ` data-lazy="${lazy.push(it) - 1}"` : '';
+      body.push(`<div class="fold tool${it.err ? ' err' : ''}"${lz}><div class="hd"><button class="sum"${lz ? ' aria-expanded="false"' : ' disabled'}><span class="n">${esc(it.name)}</span><span class="s">${esc(it.sum)}</span>${it.err ? '<span class="bad">失败</span>' : ''}</button>${jump}</div></div>`);
+    } else if (it.k === 'queued') body.push(`<div class="prompt queued">${esc(it.text)}</div>`);
+    else if (it.k === 'note') body.push(`<div class="note">${esc(it.text)}</div>`);
+    else if (it.k === 'compact') body.push(`<div class="cut">上下文压缩 ${kfmt(it.pre)} → ${kfmt(it.post)}${it.trigger === 'manual' ? '（手动）' : ''}</div>`);
+  }
+  flushTools();
+  if (!t.items.some((i) => i.k === 'text')) body.push('<div class="note">这一轮没有文字回复。</div>');
+  if (t.interrupted) body.push('<div class="note">这一轮被你中断了。</div>');
+  const db = $('dBody');
+  db.lazyItems = lazy;
+  db.scrollTop = 0;  // 先回顶再换内容：换完再设会强制把新内容同步排版一遍
+  db.innerHTML = body.join('');
+  drawer.classList.add('open');
+}
+
+function closeDrawer() {
+  $('drawer').classList.remove('open');
+  state.sel = null;
+  applyMarks();
+  drawMini();
+}
+$('dClose').onclick = closeDrawer;
+// 折叠块和子代理跳转都在这里统一处理（事件委托，不给每个按钮单独挂监听）
+$('dBody').addEventListener('click', (e) => {
+  const jump = e.target.closest('.jump');
+  if (jump) {
+    const first = laneTurns.get(jump.dataset.lane)?.[0];
+    if (first) select(first.id, true);
+    return;
+  }
+  const sum = e.target.closest('.sum');
+  const fold = sum?.closest('.fold[data-lazy]');
+  if (!fold) return;
+  if (!fold.dataset.filled) {
+    const it = $('dBody').lazyItems[Number(fold.dataset.lazy)];
+    fold.dataset.filled = '1';
+    const inp = it.k === 'tool' ? toolInput(it) : '', res = it.k === 'tool' ? toolResult(it) : '';
+    fold.insertAdjacentHTML('beforeend', `<div class="bd">${it.k === 'think' ? `<pre>${esc(it.text)}</pre>`
+      : `${inp ? `<pre>${esc(inp)}</pre>` : ''}${res ? `<pre>${esc(res)}</pre>` : ''}`}</div>`);
+  }
+  const open = fold.classList.toggle('open');
+  sum.setAttribute('aria-expanded', String(open));
+});
+
+function contextChain(id) {
+  const ids = [];
+  let cur = id;
+  while (cur && cur !== 'ROOT') {
+    ids.push(cur);
+    const t = byId.get(cur);
+    const lane = laneOf.get(t.lane);
+    cur = t.parent || (lane.kind === 'agent' ? lane.parentTurn : null);
+  }
+  return ids.reverse();
+}
+
+// ---------- 搜索 ----------
+// 索引在启动后的空闲时间里分片建，第一次搜索就不用等；空闲时间还没建完就当场补完
+const haystack = new Map();
+let hayDone = 0;
+const hayText = (t) => [t.prompt, ...t.items.map((i) => `${i.text || ''} ${i.name || ''} ${i.sum || ''}`)].join('\n').toLowerCase();
+function fillHaystack(until = () => true) {
+  for (; hayDone < DATA.turns.length && until(); hayDone++) haystack.set(DATA.turns[hayDone].id, hayText(DATA.turns[hayDone]));
+}
+const idle = window.requestIdleCallback || ((f) => setTimeout(() => { const end = performance.now() + 8; f({ timeRemaining: () => end - performance.now() }); }, 50));
+function idleHaystack(deadline) {
+  fillHaystack(() => deadline.timeRemaining() > 1);
+  if (hayDone < DATA.turns.length) idle(idleHaystack);
+}
+function runSearch(q) {
+  q = q.trim().toLowerCase();
+  if (q) fillHaystack();
+  // 收起的子代理也参与搜索，跳到那一处时会自动展开
+  state.hits = q ? DATA.turns.filter((t) => haystack.get(t.id).includes(q)).map((t) => t.id) : [];
+  state.hitPos = -1;
+  state.q = q;
+  const hidden = state.hits.filter((id) => !layout.pos.has(id)).length;
+  $('qcount').textContent = q ? `${state.hits.length} 处${hidden ? `，${hidden} 处在收起的子代理里` : ''}` : '';
+  applyMarks();
+}
+function applyMarks() {
+  state.hitSet = new Set(state.hits);
+  for (const el of cardEls.values()) if (el.isConnected) decorate(el, byId.get(el.dataset.id));
+}
+let qTimer;
+$('q').addEventListener('input', (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => runSearch(e.target.value), 120); });
+$('q').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && state.hits.length) {
+    state.hitPos = (state.hitPos + (e.shiftKey ? -1 : 1) + state.hits.length) % state.hits.length;
+    $('qcount').textContent = `${state.hitPos + 1} / ${state.hits.length}`;
+    select(state.hits[state.hitPos], true);
+  } else if (e.key === 'Escape') { e.target.value = ''; runSearch(''); e.target.blur(); }
+});
+
+// ---------- 开关 / 导出 ----------
+function toggle(key, value) {
+  state[key] = value ?? !state[key];
+  const btn = { agents: 'tAgents', tools: 'tTools', think: 'tThink', lines: 'tLines' }[key];
+  $(btn).setAttribute('aria-pressed', String(state[key]));
+  if (key === 'agents') { if (!state.agents) state.openAgents.clear(); relayout(state.sel); }
+  if (key === 'lines') $('lines').hidden = !state.lines;
+  if ((key === 'tools' || key === 'think') && state.sel) openDrawer(byId.get(state.sel));
+}
+$('tAgents').onclick = () => toggle('agents');
+$('tTools').onclick = () => toggle('tools');
+$('tThink').onclick = () => toggle('think');
+$('tLines').onclick = () => toggle('lines');
+
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const baseName = `${DATA.project.name}-context-tree`;
+function doExport(kind) {
+  const mdOpts = { tools: state.tools, thinking: state.think };
+  if (kind === 'json') { hydrate(); download(`${baseName}.json`, JSON.stringify(DATA, null, 2), 'application/json'); }
+  else if (kind === 'md-all') download(`${baseName}.md`, toMarkdown(DATA, mdOpts), 'text/markdown');
+  else if (kind === 'md-path') {
+    if (!state.sel) { alert('先在树上点选一条回复，再导出它的上下文链。'); return; }
+    download(`${baseName}-chain-${idxOf.get(state.sel)}.md`, toMarkdown(DATA, { ...mdOpts, turnIds: contextChain(state.sel), title: `上下文链 · ${DATA.project.name}` }), 'text/markdown');
+  }
+}
+const menu = $('exportMenu');
+$('exportBtn').onclick = (e) => { e.stopPropagation(); const open = menu.classList.toggle('open'); $('exportBtn').setAttribute('aria-expanded', String(open)); };
+document.addEventListener('click', () => { menu.classList.remove('open'); $('exportBtn').setAttribute('aria-expanded', 'false'); });
+menu.querySelectorAll('[data-ex]').forEach((b) => b.addEventListener('click', () => doExport(b.dataset.ex)));
+$('dPath').onclick = () => doExport('md-path');
+$('dCopy').onclick = async () => {
+  const text = toMarkdown(DATA, { turnIds: [state.sel], tools: state.tools, thinking: state.think, title: `${DATA.project.name} · 第 ${idxOf.get(state.sel)} 轮` });
+  try { await navigator.clipboard.writeText(text); $('dCopy').textContent = '已复制'; }
+  catch { download(`${baseName}-turn.md`, text, 'text/markdown'); $('dCopy').textContent = '已下载'; }
+  setTimeout(() => { $('dCopy').textContent = '复制本轮 Markdown'; }, 1400);
+};
+
+// ---------- 键盘 ----------
+document.addEventListener('keydown', (e) => {
+  if (e.target.matches('input')) return;
+  if (e.key === '/') { e.preventDefault(); $('q').focus(); return; }
+  if (e.key === 'Escape') { closeDrawer(); return; }
+  if (!state.sel) return;
+  const t = byId.get(state.sel);
+  const { prev, next } = laneNeighbors(t);
+  if (e.key === 'ArrowRight' && next) { e.preventDefault(); select(next.id, true); }
+  else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    if (prev) select(prev.id, true);
+    else { const up = layout.parentOf.get(t.id); if (up && up !== 'ROOT') select(up, true); }
+  } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const p = layout.pos.get(t.id);
+    const dir = e.key === 'ArrowDown' ? 1 : -1;
+    let best = null;
+    for (const [id, q] of layout.pos) {
+      if ((q.row - p.row) * dir <= 0) continue;
+      const score = Math.abs(q.row - p.row) * 1000 + Math.abs(q.col - p.col);
+      if (!best || score < best.score) best = { id, score };
+    }
+    if (best) select(best.id, true);
+  }
+});
+
+// ---------- 线路列表 ----------
+function renderLines() {
+  const nav = $('lines');
+  nav.innerHTML = DATA.lanes.filter((l) => l.kind === 'session').map((l) => {
+    const agents = DATA.lanes.filter((a) => a.kind === 'agent' && a.sessionId === l.sessionId).length;
+    return `<button class="row" data-lane="${esc(l.key)}" style="--c:${l.color}"><span class="no">${esc(l.no)}</span>`
+      + `<span class="t" title="${esc(l.title)}">${esc(l.title)}</span>`
+      + `<span class="d">${fmtTime(l.start)}　${l.turnCount} 轮${agents ? `　${agents} 个子代理` : ''}</span></button>`;
+  }).join('');
+  nav.querySelectorAll('.row').forEach((b) => b.addEventListener('click', () => select(laneTurns.get(b.dataset.lane)[0].id, true)));
+}
+
+// ---------- 启动 ----------
+$('pname').innerHTML = `${esc(DATA.project.name)}<small>上下文树</small>`;
+document.title = `${DATA.project.name} · 上下文树`;
+const s = DATA.stats;
+$('stats').innerHTML = `<span><b>${s.sessions}</b>个会话</span><span><b>${s.turns}</b>轮对话</span>${s.agents ? `<span><b>${s.agents}</b>个子代理</span>` : ''}<span>${fmtTime(s.start)} 至 ${fmtTime(s.end)}</span>`;
+if (!DATA.turns.length) {
+  document.body.insertAdjacentHTML('beforeend', '<div class="empty">这个项目下还没有可显示的对话。先在该目录里和 Claude Code 聊几轮，再重新生成。</div>');
+} else {
+  buildLayout();
+  // 先定好初始视角再渲染，首屏挂上的就是真正要显示的那批卡片
+  view.k = 0.9;
+  view.x = state.lines && innerWidth > 900 ? 300 : 10;
+  view.y = 16;
+  render();
+  renderLines();
+  paintView();
+  idle(idleHaystack);
+  const hash = decodeURIComponent(location.hash.slice(1));
+  if (hash && byId.has(hash)) select(hash, true);
+}
+function syncViewport() {
+  const w = vp.clientWidth, h = vp.clientHeight;
+  if (w === vpSize.w && h === vpSize.h) return;
+  vpSize.w = w; vpSize.h = h;
+  cardRangeKey = '';
+  if (layout) paintView();
+}
+addEventListener('resize', syncViewport);
+new ResizeObserver(syncViewport).observe(vp);
+</script>
+</body>
+</html>
