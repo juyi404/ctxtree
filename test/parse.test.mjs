@@ -159,6 +159,21 @@ test('从别的会话分叉出来的会话接到父消息所在的那一轮，�
   assert.ok(!('uuid' in first('s2')) && !('externalParent' in first('s2')));
 });
 
+test('总览按分叉关系给会话分组：分叉出来的会话和源头一组，组名取最早那条', () => {
+  const data = parseProject(fixture((dir) => {
+    const s2 = builders('s2');
+    writeJsonl(path.join(dir, 's2.jsonl'), [s2.user('f1', 'a4', '换个思路'), s2.asst('f2', 'f1', 'fm1', [{ type: 'text', text: '好' }])]);
+    const s3 = builders('s3');
+    writeJsonl(path.join(dir, 's3.jsonl'), [s3.user('h1', 'f2', '接着 s2 往下')]);
+    const s4 = builders('s4');
+    writeJsonl(path.join(dir, 's4.jsonl'), [s4.user('k1', null, '另起一个话题'), s4.asst('k2', 'k1', 'km1', [{ type: 'text', text: '行' }])]);
+  }));
+  const main = mainScript(renderHtml(data));
+  const src = main.match(/^function sessionFamilies\(lanes, turns\) \{[\s\S]*?^\}$/m)[0];
+  const fam = new Function(`${src}\nreturn sessionFamilies;`)()(data.lanes, data.turns);
+  assert.deepEqual(Object.fromEntries(fam), { s1: 's1', s2: 's1', s3: 's1', s4: 's4' });
+});
+
 // 假密钥在运行时拼出来，源码里不出现完整的密钥形状
 const fake = (prefix, n) => prefix + 'Q7mZ2xK9pL4w'.repeat(Math.ceil(n / 12)).slice(0, n);
 const SK = fake('sk-', 48);

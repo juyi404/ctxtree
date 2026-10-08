@@ -147,6 +147,61 @@ kbd { display: inline-block; min-width: 20px; padding: 3px 5px; font: 600 11px/1
 .lines .no { grid-row: span 2; min-width: 34px; padding: 0 6px; font: 600 12px/22px var(--sign); text-align: center; color: #fff; background: var(--c); border-radius: 6px; }
 .lines .t { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lines .d { font: 11.5px var(--sign); color: var(--ink-3); }
+/* 二级页面里正在看的那条会话 */
+.lines .row.on { background: color-mix(in srgb, var(--c) 10%, #fff); box-shadow: inset 3px 0 0 var(--c); }
+
+/* 顶栏：二级页面的返回按钮和当前会话 */
+.back { flex: none; gap: 4px; height: 34px; padding: 0 12px 0 8px; }
+.crumb { flex: 0 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 300px; font-weight: 600; white-space: nowrap; }
+.crumb::before { content: ""; flex: none; width: 1px; height: 20px; margin-right: 4px; background: var(--rule); }
+.crumb .no { flex: none; min-width: 32px; padding: 0 7px; font: 600 12px/22px var(--sign); text-align: center; color: #fff; background: var(--c); border-radius: 6px; }
+.crumb .t { overflow: hidden; text-overflow: ellipsis; }
+.crumb .more { flex: none; font: 500 12px var(--sign); color: var(--ink-3); }
+body.deep .top h1 small { display: none; }
+
+/* 一级页面：会话总览。会话一多全画在一张图上就找不到，先在这里挑一条，点进去才画它的线路图 */
+.ov { position: fixed; inset: 56px 0 0; overflow: auto; z-index: 12; }
+body:not(.overview) .ov { display: none; }
+body.overview #vp { visibility: hidden; }
+body.overview .lines, body.overview #mini, body.overview .zoom, body.overview .hint, body.overview .group { display: none; }
+.ov-in { max-width: 1560px; margin: 0 auto; padding: 26px 28px 56px; }
+.ov-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 20px; }
+.ov-head h2 { display: flex; align-items: center; gap: 10px; margin: 0; font: 600 24px/1.1 var(--sign); letter-spacing: .01em; }
+.ov-head h2 b { padding: 4px 8px; font: 600 13px/1 var(--sign); color: var(--ink-2); background: var(--card); border: 1px solid var(--rule); border-radius: 7px; }
+.ov-head p { margin: 8px 0 0; font-size: 13px; color: var(--ink-3); }
+.ov-head .tbtn { margin-left: auto; }
+.sgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.sgrid .day { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; margin: 16px 2px 0; font: 600 13px/1 var(--body); letter-spacing: .04em; color: var(--ink-2); }
+.sgrid .day:first-child { margin-top: 0; }
+.sgrid .day span { font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--ink-3); }
+.sgrid .none { grid-column: 1 / -1; padding: 56px 0; text-align: center; color: var(--ink-3); }
+/* 会话卡高度固定，滚出视口的不排版：几百条会话时首屏只排看得见的十几张 */
+.scard { position: relative; display: flex; flex-direction: column; gap: 8px; height: 220px; padding: 14px 16px 12px; text-align: left; background: var(--card); border: 1px solid #DDE3E1; border-radius: 12px; box-shadow: inset 0 3px 0 var(--c), 0 1px 2px rgba(23, 32, 43, .06); content-visibility: auto; transition: transform .14s ease-out, box-shadow .14s ease-out, border-color .14s; }
+.scard:hover { border-color: var(--rule-2); transform: translateY(-2px); box-shadow: inset 0 3px 0 var(--c), 0 12px 28px -16px rgba(23, 32, 43, .4); }
+.scard.was { outline: 2.5px solid var(--c); outline-offset: 2px; }
+.scard > span { display: block; min-width: 0; }
+.scard .sh { display: flex; align-items: center; gap: 8px; font: 12px/1 var(--sign); color: var(--ink-3); white-space: nowrap; }
+.scard .sh > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.scard .no { flex: none; min-width: 34px; padding: 0 7px; font: 600 12.5px/22px var(--sign); text-align: center; color: #fff; background: var(--c); border-radius: 6px; }
+.scard .du { margin-left: auto; }
+.scard .tt { font-size: 15px; font-weight: 600; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 线路缩影：一轮一个站点，长度跟着轮数走，超过 24 轮的末尾淡出 */
+.scard .rail { flex: none; width: calc(var(--n) * 13px); max-width: 100%; height: 12px; background: radial-gradient(circle, #fff 0 2.3px, var(--c) 2.8px 4.6px, transparent 5.1px) 0 0 / 13px 12px repeat-x, linear-gradient(var(--c), var(--c)) 6.5px 50% / calc(100% - 13px) 4px no-repeat; }
+.scard .rail.more { -webkit-mask: linear-gradient(90deg, #000 78%, transparent); mask: linear-gradient(90deg, #000 78%, transparent); }
+.scard .qq, .scard .aa { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12.5px; line-height: 1.55; word-break: break-word; }
+.scard .qq { color: var(--ink); }
+.scard .aa { color: var(--ink-2); }
+.scard .aa.a3 { -webkit-line-clamp: 3; }
+.scard .qq::before, .scard .aa::before { display: inline-block; margin-right: 6px; padding: 0 5px; font: 600 10.5px/16px var(--body); vertical-align: 1px; border-radius: 4px; }
+.scard .qq::before { content: "你"; color: color-mix(in srgb, var(--c) 80%, #000); background: color-mix(in srgb, var(--c) 12%, #fff); }
+.scard .aa::before { content: "Claude"; color: #B4532F; background: #FBEDE6; }
+.scard .aa:empty::after { content: "没有文字回复"; color: var(--ink-3); }
+.scard .ft { margin-top: auto; display: flex; gap: 6px; overflow: hidden; font-size: 11.5px; color: var(--ink-2); white-space: nowrap; }
+.scard .ft > span { flex: none; height: 20px; padding: 0 8px; line-height: 20px; background: var(--paper-2); border-radius: 6px; }
+.scard .ft .br { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 11px/20px var(--mono); }
+.scard .ft .hitc { order: -1; font-weight: 600; color: #6B5000; background: #FFF1BF; }
+.hint .h-back { display: contents; }
+.solo .hint .h-back { display: none; }
 
 #mini { position: fixed; left: 12px; bottom: 12px; width: 272px; height: 150px; background: var(--card); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--float); z-index: 10; cursor: crosshair; }
 .zoom { position: fixed; right: 16px; bottom: 42px; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: var(--card); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--float); z-index: 5; }
@@ -248,11 +303,14 @@ kbd { display: inline-block; min-width: 20px; padding: 3px 5px; font: 600 11px/1
 .empty div { max-width: 420px; padding: 28px 32px; text-align: center; line-height: 1.7; background: var(--card); border: 1px solid var(--rule); border-radius: 16px; box-shadow: var(--float); }
 
 @media (max-width: 1440px) { .stats .range { display: none; } }
-@media (max-width: 1220px) { .stats, .top h1 small { display: none; } }
+@media (max-width: 1220px) { .stats, .top h1 small, .back span { display: none; } .crumb { max-width: 200px; } }
 @media (max-width: 900px) {
   .hint, #mini, .lines { display: none; }
   .search { width: 40vw; }
+  body.deep .top h1 { display: none; }
+  body.deep .search { width: 32vw; min-width: 0; }
   .group .tbtn::before { display: none; }
+  .ov-in { padding: 18px 14px 40px; }
 }
 @media (prefers-reduced-motion: reduce) { .drawer, .drawer.open { transition: none; } }
 </style>
@@ -260,7 +318,9 @@ kbd { display: inline-block; min-width: 20px; padding: 3px 5px; font: 600 11px/1
 <body>
 <header class="top">
   <div class="brand" aria-hidden="true"><!--__BRAND__--></div>
+  <button class="tbtn back" id="back" title="回到会话总览（Esc）" hidden><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6"/></svg><span>全部会话</span></button>
   <h1 id="pname"></h1>
+  <div class="crumb" id="crumb" hidden></div>
   <div class="stats" id="stats"></div>
   <div class="spacer"></div>
   <label class="search" title="搜索提问、回复和工具调用（快捷键 /）">
@@ -278,6 +338,7 @@ kbd { display: inline-block; min-width: 20px; padding: 3px 5px; font: 600 11px/1
   <div class="menu" id="exportMenu">
     <button class="tbtn primary" id="exportBtn" aria-haspopup="true" aria-expanded="false">导出<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6.5 9.5 5.5 5.5 5.5-5.5"/></svg></button>
     <div class="menu-list" role="menu">
+      <button data-ex="md-scope" role="menuitem" hidden>当前会话 Markdown<span>正在看的这条会话，连同它的子代理</span></button>
       <button data-ex="md-all" role="menuitem">整个项目 Markdown<span>所有会话，按时间排列</span></button>
       <button data-ex="md-path" role="menuitem">选中回复的上下文链 Markdown<span>从起点一直到选中的这一轮</span></button>
       <button data-ex="json" role="menuitem">树数据 JSON<span>可以再交给别的工具处理</span></button>
@@ -285,6 +346,13 @@ kbd { display: inline-block; min-width: 20px; padding: 3px 5px; font: 600 11px/1
   </div>
 </header>
 
+<main class="ov" id="ov" aria-label="会话总览"><div class="ov-in">
+  <div class="ov-head">
+    <div><h2>全部会话<b id="ovCount"></b></h2><p id="ovSub"></p></div>
+    <button class="tbtn" id="showAll" title="把所有会话画在同一张线路图上"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg>合成一张图</button>
+  </div>
+  <div class="sgrid" id="sgrid"></div>
+</div></main>
 <div id="vp"><div id="world"><svg id="edges"></svg></div></div>
 <nav class="lines" id="lines" aria-label="线路列表"></nav>
 <canvas id="mini" width="544" height="300" aria-label="全局缩略图"></canvas>
@@ -294,7 +362,7 @@ kbd { display: inline-block; min-width: 20px; padding: 3px 5px; font: 600 11px/1
   <hr>
   <button id="zFit" title="显示全部" aria-label="显示全部"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9V4.5H9M15 4.5h4.5V9M19.5 15v4.5H15M9 19.5H4.5V15"/></svg></button>
 </div>
-<div class="hint"><span>拖动或滚轮平移</span><i></i><kbd>Shift</kbd><span>+滚轮 上下</span><i></i><kbd>Ctrl</kbd><span>+滚轮 缩放</span><i></i><kbd>←</kbd><kbd>→</kbd><span>沿线路切换</span><i></i><kbd>/</kbd><span>搜索</span></div>
+<div class="hint"><span>拖动或滚轮平移</span><i></i><kbd>Shift</kbd><span>+滚轮 上下</span><i></i><kbd>Ctrl</kbd><span>+滚轮 缩放</span><i></i><kbd>←</kbd><kbd>→</kbd><span>沿线路切换</span><i></i><kbd>/</kbd><span>搜索</span><span class="h-back"><i></i><kbd>Esc</kbd><span>返回总览</span></span></div>
 
 <aside class="drawer" id="drawer" aria-label="回复详情">
   <div class="dh">
@@ -379,7 +447,48 @@ for (const l of DATA.lanes) {
   l.no = `${parent?.no || 'S'}·${n}`;
 }
 
-const state = { agents: false, openAgents: new Set(), tools: true, think: false, lines: true, sel: null, hits: [], hitSet: new Set(), hitPos: -1 };
+// ---------- 会话分组 ----------
+// 从别的会话分叉、继续出来的会话和原会话算一组：二级页面画整组，支线才接得上。组号取组里最早的会话（lanes 已按开始时间排好）
+function sessionFamilies(lanes, turns) {
+  const up = new Map();
+  for (const l of lanes) if (l.kind === 'session') up.set(l.key, l.key);
+  const find = (k) => { while (up.get(k) !== k) { up.set(k, up.get(up.get(k))); k = up.get(k); } return k; };
+  const order = new Map(lanes.map((l, i) => [l.key, i]));
+  const sessionOfLane = new Map(lanes.map((l) => [l.key, l.sessionId]));
+  const sessionOfTurn = new Map(turns.map((t) => [t.id, sessionOfLane.get(t.lane)]));
+  for (const t of turns) {
+    const a = sessionOfTurn.get(t.id), b = t.parent && sessionOfTurn.get(t.parent);
+    if (!b || a === b || !up.has(a) || !up.has(b)) continue;
+    let ra = find(a), rb = find(b);
+    if (ra === rb) continue;
+    if (order.get(rb) < order.get(ra)) [ra, rb] = [rb, ra];
+    up.set(rb, ra);
+  }
+  const fam = new Map();
+  for (const k of up.keys()) fam.set(k, find(k));
+  return fam;
+}
+const famOf = sessionFamilies(DATA.lanes, DATA.turns);
+const sessionLanes = DATA.lanes.filter((l) => l.kind === 'session');
+const famMembers = new Map();
+for (const l of sessionLanes) {
+  const f = famOf.get(l.key);
+  if (!famMembers.has(f)) famMembers.set(f, []);
+  famMembers.get(f).push(l);
+}
+// 只有一组会话时没有总览，直接进线路图
+const SOLO = famMembers.size <= 1;
+const sessionOf = (t) => laneOf.get(t.lane).sessionId;
+const famOfTurn = (t) => famOf.get(sessionOf(t));
+// 总览按最近活动排；搜索命中也按这个顺序，Enter 才是一个会话一个会话地往下走
+const endOf = (l) => l.end || l.start || '';
+const homeOrder = [...sessionLanes].sort((a, b) => (endOf(a) < endOf(b) ? 1 : endOf(a) > endOf(b) ? -1 : 0));
+const famRank = new Map();
+homeOrder.forEach((l, i) => { if (!famRank.has(famOf.get(l.key))) famRank.set(famOf.get(l.key), i); });
+
+// scope：null 是会话总览，'*' 是全部会话合成一张图，其余是会话组号（只画这一组）；focus 是顶栏标出的那条会话
+const state = { agents: false, openAgents: new Set(), tools: true, think: false, lines: true, sel: null, hits: [], hitSet: new Set(), hitPos: -1, hitBySession: new Map(), scope: null, focus: null };
+const inScope = (t) => state.scope === '*' || famOfTurn(t) === state.scope;
 const W = 280, H = 150, COL = 320, ROW_RAIL = 22, ROW_CARD = 44, ROW = 44 + H + 34;
 const ROOT_X = 0, FIRST_COL_X = 300;
 
@@ -393,7 +502,8 @@ const fmtDur = (a, b) => {
   const s = Math.max(0, (new Date(b) - new Date(a)) / 1000);
   if (s < 60) return `${Math.round(s)} 秒`;
   if (s < 3600) return `${Math.round(s / 60)} 分钟`;
-  return `${(s / 3600).toFixed(1)} 小时`;
+  if (s < 172800) return `${(s / 3600).toFixed(1)} 小时`;
+  return `${Math.round(s / 86400)} 天`;  // 隔几天又接着聊的会话，按小时数看不出长短
 };
 const kfmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}k` : String(n || 0));
 const ctxLimit = (t) => ((t.models || []).some((m) => /\[1m\]/i.test(m)) || t.ctx > 200000 ? 1000000 : 200000);
@@ -413,7 +523,7 @@ function laneShown(lane, memo = new Map()) {
 
 function buildLayout() {
   const memo = new Map();
-  const visible = DATA.turns.filter((t) => laneShown(laneOf.get(t.lane), memo));
+  const visible = DATA.turns.filter((t) => inScope(t) && laneShown(laneOf.get(t.lane), memo));
   const vis = new Set(visible.map((t) => t.id));
   const kids = new Map([['ROOT', []]]);
   const parentOf = new Map();
@@ -1060,13 +1170,19 @@ function revealLane(laneKey) {
 function select(id, center) {
   const t = byId.get(id);
   if (!t) return;
+  // 不在当前页面上的那一轮（搜索跳转、线路列表、子代理链接）：先进它所在的会话。二级页面之间互相切换不新增历史，返回键总是回总览
+  const jumped = !state.scope || !inScope(t);
+  if (jumped) go(`s=${encodeURIComponent(sessionOf(t))}`, !!state.scope);
   if (!layout.pos.has(id)) revealLane(t.lane);
   if (!layout.pos.has(id)) return;
   state.sel = id;
+  setFocus(sessionOf(t));
   applyMarks();
   openDrawer(t);
-  if (center || !isVisible(id)) centerOn(id, true);
+  if (jumped) centerOn(id, false);
+  else if (center || !isVisible(id)) centerOn(id, true);
   drawMini();
+  syncCount();
 }
 
 function openDrawer(t) {
@@ -1136,6 +1252,7 @@ function closeDrawer() {
   state.sel = null;
   applyMarks();
   drawMini();
+  syncCount();
 }
 $('dClose').onclick = closeDrawer;
 // 折叠块和子代理跳转都在这里统一处理（事件委托，不给每个按钮单独挂监听）
@@ -1188,13 +1305,38 @@ function idleHaystack(deadline) {
 function runSearch(q) {
   q = q.trim().toLowerCase();
   if (q) fillHaystack();
-  // 收起的子代理也参与搜索，跳到那一处时会自动展开
+  // 收起的子代理也参与搜索，跳到那一处时会自动展开。按总览里会话的顺序排，同组里按时间
+  const t0 = (id) => byId.get(id).t0 || '';
   state.hits = q ? DATA.turns.filter((t) => haystack.get(t.id).includes(q)).map((t) => t.id) : [];
+  state.hits.sort((a, b) => famRank.get(famOfTurn(byId.get(a))) - famRank.get(famOfTurn(byId.get(b))) || (t0(a) < t0(b) ? -1 : t0(a) > t0(b) ? 1 : 0));
+  state.hitBySession = new Map();
+  for (const id of state.hits) { const sid = sessionOf(byId.get(id)); state.hitBySession.set(sid, (state.hitBySession.get(sid) || 0) + 1); }
   state.hitPos = -1;
   state.q = q;
-  const hidden = state.hits.filter((id) => !layout.pos.has(id)).length;
-  $('qcount').textContent = q ? `${state.hits.length} 处${hidden ? `，${hidden} 处在收起的子代理里` : ''}` : '';
   applyMarks();
+  syncCount();
+  if (state.scope === null) renderHome();
+  else homeDirty = true;
+}
+// 当前页面上的命中；总览和合成图里就是全部
+const scopeHits = () => (state.scope === null || state.scope === '*' ? state.hits : state.hits.filter((id) => inScope(byId.get(id))));
+function syncCount() {
+  const el = $('qcount');
+  el.title = '';
+  if (!state.q) { el.textContent = ''; return; }
+  const all = state.hits.length;
+  if (state.scope === null) { el.textContent = `${all} 处${all ? ` · ${state.hitBySession.size} 个会话` : ''}`; return; }
+  const mine = scopeHits();
+  const at = state.hitPos >= 0 && state.sel ? mine.indexOf(state.sel) : -1;
+  let text = at >= 0 ? `${at + 1} / ${mine.length}` : `${mine.length} 处`;
+  if (mine.length < all) {
+    text = `本会话 ${text} · 共 ${all}`;
+    el.title = `其他会话里还有 ${all - mine.length} 处；Enter 走完这里会接着跳过去，回总览能看到是哪几个会话`;
+  } else if (at < 0 && layout) {
+    const hidden = mine.filter((id) => !layout.pos.has(id)).length;
+    if (hidden) text += `，${hidden} 处在收起的子代理里`;
+  }
+  el.textContent = text;
 }
 function applyMarks() {
   state.hitSet = new Set(state.hits);
@@ -1204,9 +1346,14 @@ let qTimer;
 $('q').addEventListener('input', (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => runSearch(e.target.value), 120); });
 $('q').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && state.hits.length) {
-    state.hitPos = (state.hitPos + (e.shiftKey ? -1 : 1) + state.hits.length) % state.hits.length;
-    $('qcount').textContent = `${state.hitPos + 1} / ${state.hits.length}`;
-    select(state.hits[state.hitPos], true);
+    // 已经停在某一处时沿全部命中往下走（走完这个会话就进下一个）；还没开始时从当前页面的第一处起
+    const all = state.hits, mine = scopeHits();
+    const at = state.hitPos >= 0 && state.sel ? all.indexOf(state.sel) : -1;
+    let id;
+    if (at >= 0) id = all[(at + (e.shiftKey ? all.length - 1 : 1)) % all.length];
+    else { const list = mine.length ? mine : all; id = list[e.shiftKey ? list.length - 1 : 0]; }
+    state.hitPos = 0;
+    select(id, true);
   } else if (e.key === 'Escape') { e.target.value = ''; runSearch(''); e.target.blur(); }
 });
 
@@ -1215,7 +1362,7 @@ function toggle(key, value) {
   state[key] = value ?? !state[key];
   const btn = { agents: 'tAgents', tools: 'tTools', think: 'tThink', lines: 'tLines' }[key];
   $(btn).setAttribute('aria-pressed', String(state[key]));
-  if (key === 'agents') { if (!state.agents) state.openAgents.clear(); relayout(state.sel); }
+  if (key === 'agents') { if (!state.agents) state.openAgents.clear(); if (state.scope !== null) relayout(state.sel); }
   if (key === 'lines') $('lines').hidden = !state.lines;
   if ((key === 'tools' || key === 'think') && state.sel) openDrawer(byId.get(state.sel));
 }
@@ -1236,6 +1383,11 @@ function doExport(kind) {
   const mdOpts = { tools: state.tools, thinking: state.think };
   if (kind === 'json') { hydrate(); download(`${baseName}.json`, JSON.stringify(DATA, null, 2), 'application/json'); }
   else if (kind === 'md-all') download(`${baseName}.md`, toMarkdown(DATA, mdOpts), 'text/markdown');
+  else if (kind === 'md-scope') {
+    const lane = laneOf.get(state.focus);
+    if (!lane || state.scope === null || state.scope === '*') return;
+    download(`${baseName}-${lane.no}.md`, toMarkdown(DATA, { ...mdOpts, turnIds: DATA.turns.filter(inScope).map((t) => t.id), title: `${DATA.project.name} · ${lane.no} ${lane.title}` }), 'text/markdown');
+  }
   else if (kind === 'md-path') {
     if (!state.sel) { alert('先在树上点选一条回复，再导出它的上下文链。'); return; }
     download(`${baseName}-chain-${idxOf.get(state.sel)}.md`, toMarkdown(DATA, { ...mdOpts, turnIds: contextChain(state.sel), title: `上下文链 · ${DATA.project.name}` }), 'text/markdown');
@@ -1257,7 +1409,11 @@ $('dCopy').onclick = async () => {
 document.addEventListener('keydown', (e) => {
   if (e.target.matches('input')) return;
   if (e.key === '/') { e.preventDefault(); $('q').focus(); return; }
-  if (e.key === 'Escape') { closeDrawer(); return; }
+  if (e.key === 'Escape') {
+    if ($('drawer').classList.contains('open')) closeDrawer();
+    else if (state.scope !== null && !SOLO) back();
+    return;
+  }
   if (!state.sel) return;
   const t = byId.get(state.sel);
   const { prev, next } = laneNeighbors(t);
@@ -1295,29 +1451,231 @@ $('lines').addEventListener('click', (e) => {
   const b = e.target.closest('.row');
   if (b) select(laneTurns.get(b.dataset.lane)[0].id, true);
 });
+function syncLines() {
+  const nav = $('lines');
+  let first = null;
+  for (const b of nav.getElementsByClassName('row')) {
+    const on = state.scope !== null && state.scope !== '*' && !SOLO && famOf.get(b.dataset.lane) === state.scope;
+    if (on !== b.classList.contains('on')) b.classList.toggle('on', on);
+    if (on) first ||= b;
+  }
+  if (first && state.lines && innerWidth > 900) first.scrollIntoView({ block: 'nearest' });
+}
+
+// ---------- 会话总览（一级页面） ----------
+const WEEK = '日一二三四五六';
+const pad2 = (n) => String(n).padStart(2, '0');
+const hm = (ts) => { const d = new Date(ts); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const dayKey = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+// 总览的分组：今天、昨天、最近 7 天，再往前按月。按天分的话，零散的会话每天只有一张卡，整页都是空行
+function period(ts) {
+  const d = new Date(ts), now = new Date();
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+  const date = `${d.getMonth() + 1}月${d.getDate()}日 周${WEEK[d.getDay()]}`;
+  if (days <= 0) return { key: 'd0', name: '今天', sub: date };
+  if (days === 1) return { key: 'd1', name: '昨天', sub: date };
+  if (days < 7) return { key: 'd7', name: '最近 7 天', sub: '' };
+  const y = d.getFullYear() !== now.getFullYear() ? `${d.getFullYear()}年` : '';
+  return { key: `m${d.getFullYear()}-${d.getMonth()}`, name: `${y}${d.getMonth() + 1}月`, sub: '' };
+}
+// 会话卡的文字只生成一次；搜索时重画总览只是把这些字符串重新拼起来
+const sessionCards = new Map();
+function sessionCard(l) {
+  if (sessionCards.has(l.key)) return sessionCards.get(l.key);
+  const turns = laneTurns.get(l.key);
+  const prompt = turns[0].prompt.trim();
+  const same = prompt.startsWith(l.title.trim());  // 没起标题的会话，标题就是第一句提问，不用再写一遍
+  const reply = turns.findLast((t) => t.items.some((i) => i.k === 'text'))?.items.findLast((i) => i.k === 'text').text;
+  const end = endOf(l);
+  const agents = agentCount.get(l.key) || 0;
+  const compact = turns.reduce((n, t) => n + t.compactions.length, 0);
+  const from = turns[0].parent && byId.has(turns[0].parent) ? laneOf.get(sessionOf(byId.get(turns[0].parent))) : null;
+  const foot = [`<span>${l.turnCount} 轮</span>`];
+  if (agents) foot.push(`<span>${agents} 个子代理</span>`);
+  if (compact) foot.push(`<span>压缩 ${compact} 次</span>`);
+  if (from && from.key !== l.key) foot.push(`<span>从 ${esc(from.no)} 分叉</span>`);
+  if (l.branch) foot.push(`<span class="br" title="分支 ${esc(l.branch)}">${esc(l.branch)}</span>`);
+  const card = {
+    head: `<button class="scard" data-s="${esc(l.key)}" style="--c:${l.color};--n:${Math.min(l.turnCount, 24)}" title="${esc(l.title)}">`
+      + `<span class="sh"><span class="no">${esc(l.no)}</span><span>${dayKey(l.start) === dayKey(end) ? `${fmtTime(l.start)} – ${hm(end)}` : `${fmtTime(l.start)} – ${fmtTime(end)}`}</span><span class="du">${fmtDur(l.start, end)}</span></span>`
+      + `<span class="tt">${chipHidden(esc(l.title))}</span><span class="rail${l.turnCount > 24 ? ' more' : ''}"></span>`
+      + (same ? '' : `<span class="qq">${chipHidden(esc(prompt.slice(0, 160)))}</span>`)
+      + `<span class="aa${same ? ' a3' : ''}">${chipHidden(esc(plain(reply?.slice(0, 800)).slice(0, 240)))}</span><span class="ft">`,
+    tail: `${foot.join('')}</span></button>`,
+  };
+  sessionCards.set(l.key, card);
+  return card;
+}
+let homeDirty = true, homeTop = 0;
+function renderHome() {
+  homeDirty = false;
+  const q = state.q;
+  const list = q ? homeOrder.filter((l) => state.hitBySession.has(l.key)) : homeOrder;
+  $('ovCount').textContent = q ? `${list.length} / ${homeOrder.length}` : homeOrder.length;
+  $('ovSub').textContent = q ? `「${$('q').value.trim()}」出现在 ${list.length} 个会话里，共 ${state.hits.length} 处。点会话会停在第一处，按 Enter 逐处往下看`
+    : '按最近活动排列。点一条会话，展开它的线路图';
+  const out = [];
+  for (let i = 0; i < list.length;) {
+    const { key, name, sub } = period(endOf(list[i]));
+    let j = i;
+    while (j < list.length && period(endOf(list[j])).key === key) j++;
+    out.push(`<div class="day">${name}<span>${sub ? `${sub} · ` : ''}${j - i} 个会话</span></div>`);
+    for (; i < j; i++) {
+      const card = sessionCard(list[i]), n = state.hitBySession.get(list[i].key);
+      out.push(card.head, n ? `<span class="hitc">命中 ${n} 处</span>` : '', card.tail);
+    }
+  }
+  if (!list.length) out.push('<div class="none">没有会话提到这个词。</div>');
+  $('sgrid').innerHTML = out.join('');
+  markWas();
+}
+// 从二级页面回来时，标出刚才看的那条会话
+function markWas() {
+  const ov = $('ov');
+  ov.querySelector('.scard.was')?.classList.remove('was');
+  const el = state.focus ? ov.querySelector(`.scard[data-s="${CSS.escape(state.focus)}"]`) : null;
+  el?.classList.add('was');
+  return el;
+}
+$('ov').addEventListener('click', (e) => {
+  if (e.target.closest('#showAll')) { go('all', false); return; }
+  const card = e.target.closest('.scard');
+  if (!card) return;
+  const sid = card.dataset.s;
+  const hit = state.q ? state.hits.find((id) => sessionOf(byId.get(id)) === sid) : null;
+  if (hit) { state.hitPos = 0; select(hit, true); }
+  else go(`s=${encodeURIComponent(sid)}`, false);
+});
+
+// ---------- 两级页面 ----------
+// 地址栏：空 = 会话总览；#s=<会话 id> = 这条会话的线路图；#all = 全部会话合成一张图；#<轮次 id> = 旧链接，打开它所在的会话并选中
+function parseHash() {
+  let h = '';
+  try { h = decodeURIComponent(location.hash.slice(1)); } catch { /* 转义坏了就当没有 */ }
+  let r = { scope: null };
+  if (h === 'all') r = { scope: '*' };
+  else if (h.startsWith('s=') && famOf.has(h.slice(2))) r = { scope: famOf.get(h.slice(2)), sid: h.slice(2) };
+  else if (byId.has(h)) r = { scope: famOfTurn(byId.get(h)), turn: h };
+  if (SOLO) r.scope = famOf.get(sessionLanes[0].key);
+  return r;
+}
+function route() {
+  const r = parseHash();
+  openScope(r.scope, r.sid);
+  if (r.turn && r.turn !== state.sel) select(r.turn, true);
+}
+// 从总览点进去的那一步记上 fromHome，返回时直接退一步历史；二级页面之间切换用 replace，不往历史里堆
+function go(hash, replace) {
+  const url = hash ? `#${hash}` : location.href.split('#')[0];
+  try {
+    if (replace) history.replaceState(history.state, '', url);
+    else history.pushState(state.scope === null ? { fromHome: true } : null, '', url);
+  } catch { location.hash = hash; }
+  route();
+}
+function back() {
+  if (history.state?.fromHome) history.back();
+  else go('', false);
+}
+$('back').onclick = back;
+
+function setFocus(sid) {
+  if (sid === state.focus) return;
+  state.focus = sid;
+  syncCrumb();
+}
+function syncCrumb() {
+  const sc = state.scope, el = $('crumb');
+  const name = `${DATA.project.name} · 上下文树`;
+  el.hidden = sc === null || SOLO;
+  if (el.hidden || sc === '*') {
+    el.innerHTML = '<span class="t">全部会话 · 合成一张图</span>';
+    el.title = '';
+    document.title = name;
+    return;
+  }
+  const l = laneOf.get(state.focus);
+  const more = famMembers.get(sc).length - 1;
+  el.style.setProperty('--c', l.color);
+  el.innerHTML = `<span class="no">${esc(l.no)}</span><span class="t">${chipHidden(esc(l.title))}</span>${more ? `<span class="more">+${more} 条相关</span>` : ''}`;
+  el.title = more ? `${l.title}\n和它分叉、继续出来的 ${more} 条会话画在同一张图上` : l.title;
+  document.title = `${l.no} ${l.title} · ${name}`;
+}
+const LOCK = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>';
+function syncStats() {
+  const s = DATA.stats, sc = state.scope;
+  if (sc === null || sc === '*' || SOLO) {
+    $('stats').innerHTML = `<span><b>${s.sessions}</b>个会话</span><span><b>${s.turns}</b>轮对话</span>${s.agents ? `<span><b>${s.agents}</b>个子代理</span>` : ''}`
+      + (s.redacted ? `<span class="safe" title="生成时按规则把密钥换成了占位，页面里只有「密钥已隐藏」标签">${LOCK}已隐藏<b>${s.redacted}</b>处密钥</span>` : '')
+      + `<span class="range">${fmtTime(s.start)} 至 ${fmtTime(s.end)}</span>`;
+    return;
+  }
+  // 二级页面只报这一组会话的数；密钥数是整个项目的，放在这里会被当成这条会话的，所以不写
+  const ls = famMembers.get(sc);
+  const turns = ls.reduce((n, l) => n + l.turnCount, 0), agents = ls.reduce((n, l) => n + (agentCount.get(l.key) || 0), 0);
+  const start = ls.reduce((m, l) => (l.start < m ? l.start : m), ls[0].start), end = ls.reduce((m, l) => (endOf(l) > m ? endOf(l) : m), '');
+  $('stats').innerHTML = `<span><b>${turns}</b>轮对话</span>${agents ? `<span><b>${agents}</b>个子代理</span>` : ''}`
+    + `<span class="range">${fmtTime(start)} 起，历时 ${fmtDur(start, end)}</span>`;
+}
+function syncHeader() {
+  const sc = state.scope, deep = sc !== null && !SOLO;
+  $('back').hidden = !deep;
+  syncCrumb();
+  syncStats();
+  syncLines();
+  menu.querySelector('[data-ex="md-scope"]').hidden = !deep || sc === '*';
+  menu.querySelector('[data-ex="md-path"]').hidden = sc === null;
+  syncCount();
+}
+
+let scopeOpened = false;
+function openScope(scope, sid) {
+  if (scopeOpened && scope === state.scope) {
+    // 同一张图里换到另一条会话：只挪镜头
+    if (scope !== null && sid && sid !== state.focus) { setFocus(sid); centerOn(laneTurns.get(sid)[0].id, true); }
+    return;
+  }
+  if (scopeOpened && state.scope === null) homeTop = $('ov').scrollTop;
+  scopeOpened = true;
+  state.scope = scope;
+  const cl = document.body.classList;
+  cl.toggle('overview', scope === null);
+  cl.toggle('deep', scope !== null && !SOLO);
+  cl.toggle('solo', SOLO);
+  if (state.sel && (scope === null || !inScope(byId.get(state.sel)))) closeDrawer();
+  if (scope === null) {
+    if (homeDirty) renderHome();
+    $('ov').scrollTop = homeTop;
+    const was = markWas();
+    if (was) { was.scrollIntoView({ block: 'nearest' }); was.focus({ preventScroll: true }); }
+  } else {
+    const lead = sid || (scope === '*' ? null : scope);
+    if (lead) state.focus = lead;
+    stopMotion();
+    buildLayout();
+    // 先定好初始视角再渲染，首屏挂上的就是真正要显示的那批卡片。镜头对着要看的那条会话的起点
+    const p = lead ? layout.pos.get(laneTurns.get(lead)[0].id) : null;
+    view.k = 0.9;
+    view.x = (state.lines && innerWidth > 900 ? 300 : 10) - (p ? layout.x(p.col) - layout.x(0) : 0) * view.k;
+    view.y = 16 - (p ? layout.y(p.row) - layout.y(0) : 0) * view.k;
+    render();
+    paintView();
+  }
+  syncHeader();
+}
 
 // ---------- 启动 ----------
 $('pname').innerHTML = `${esc(DATA.project.name)}<small>上下文树</small>`;
 document.title = `${DATA.project.name} · 上下文树`;
-const s = DATA.stats;
-const LOCK = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>';
-$('stats').innerHTML = `<span><b>${s.sessions}</b>个会话</span><span><b>${s.turns}</b>轮对话</span>${s.agents ? `<span><b>${s.agents}</b>个子代理</span>` : ''}`
-  + (s.redacted ? `<span class="safe" title="生成时按规则把密钥换成了占位，页面里只有「密钥已隐藏」标签">${LOCK}已隐藏<b>${s.redacted}</b>处密钥</span>` : '')
-  + `<span class="range">${fmtTime(s.start)} 至 ${fmtTime(s.end)}</span>`;
 if (!DATA.turns.length) {
+  syncStats();
   document.body.insertAdjacentHTML('beforeend', '<div class="empty"><div>这个项目下还没有可显示的对话。<br>先在该目录里和 Claude Code 聊几轮，再重新生成。</div></div>');
 } else {
-  buildLayout();
-  // 先定好初始视角再渲染，首屏挂上的就是真正要显示的那批卡片
-  view.k = 0.9;
-  view.x = state.lines && innerWidth > 900 ? 300 : 10;
-  view.y = 16;
-  render();
   renderLines();
-  paintView();
+  route();
+  addEventListener('hashchange', route);
+  addEventListener('popstate', route);
   idle(idleHaystack);
-  const hash = decodeURIComponent(location.hash.slice(1));
-  if (hash && byId.has(hash)) select(hash, true);
 }
 function syncViewport() {
   const w = vp.clientWidth, h = vp.clientHeight;
