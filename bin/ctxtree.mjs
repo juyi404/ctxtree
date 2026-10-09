@@ -86,37 +86,32 @@ function exportEntry(dir, file, args) {
 }
 
 // 项目之间互不依赖，分给几个工作线程并行导出（工作线程跑的也是这个文件，见末尾）。
-// 大项目先发，免得最后剩一个大项目单独跑；每个线程同时只拿一个项目，内存跟着线程数走，所以封顶
+// 任务队列是共享内存里的一个计数器，线程自己取下一个，不经主线程中转；主线程也算一个工人，
+// 先拿最大的项目：它不用等线程启动（每个要 50 ms 左右），而最大的项目决定整次导出要多久。
+// 线程先起、再列项目，两件事重叠；每个线程同时只做一个项目，内存跟着线程数走，所以封顶
 const MAX_WORKERS = 8;
-function exportAll(projects, outDir, args) {
-  const jobs = [...projects].sort((a, b) => b.bytes - a.bytes);
-  const n = Math.min(jobs.length, MAX_WORKERS, Math.max(1, (os.availableParallelism?.() ?? os.cpus().length) - 1));
+async function exportAll(listJobs, args) {
+  const n = Math.min(MAX_WORKERS, Math.max(0, (os.availableParallelism?.() ?? os.cpus().length) - 1));
+  const workers = [];
+  for (let i = 0; i < n; i++) workers.push(new Worker(new URL(import.meta.url)));
+  const jobs = listJobs();
+  const next = new Int32Array(new SharedArrayBuffer(4));
+  const claim = () => Atomics.add(next, 0, 1);
   const entries = [];
   const take = (r) => { if (r.entry) { entries.push(r.entry); console.log(r.line); } };
-  if (n <= 1) {
-    for (const p of jobs) take(exportEntry(p.dir, path.join(outDir, `${safeName(p.id)}.html`), args));
-    return Promise.resolve(entries);
-  }
-  return new Promise((resolve, reject) => {
-    let next = 0, running = n;
-    const workers = [];
-    const feed = (w) => {
-      if (next < jobs.length) {
-        const p = jobs[next++];
-        w.postMessage({ dir: p.dir, file: path.join(outDir, `${safeName(p.id)}.html`), args });
-        return;
-      }
-      w.terminate();
-      if (--running === 0) resolve(entries);
-    };
-    for (let i = 0; i < n; i++) {
-      const w = new Worker(new URL(import.meta.url));
-      workers.push(w);
-      w.on('message', (r) => { take(r); feed(w); });
+  const finished = new Promise((resolve, reject) => {
+    let running = workers.length;
+    if (!running) resolve();
+    for (const w of workers) {
+      w.on('message', take);
       w.on('error', (e) => { for (const x of workers) x.terminate(); reject(e); });
-      feed(w);
+      w.on('exit', () => { if (--running === 0) resolve(); });
+      w.postMessage({ jobs, args, next });
     }
   });
+  for (let i = claim(); i < jobs.length; i = claim()) take(exportEntry(jobs[i].dir, jobs[i].file, args));
+  await finished;
+  return entries;
 }
 
 async function main() {
@@ -133,8 +128,9 @@ async function main() {
 
   if (cmd === 'all') {
     const outDir = path.resolve(args.out || 'out');
-    // 各项目页和 index.html 在同一个目录里，顶栏的「全部项目」用相对路径回去
-    const entries = await exportAll(listProjects(), outDir, { ...args, home: 'index.html' });
+    // 各项目页和 index.html 在同一个目录里，顶栏的「全部项目」用相对路径回去。大项目排在前面先做
+    const listJobs = () => listProjects().sort((a, b) => b.bytes - a.bytes).map((p) => ({ dir: p.dir, file: path.join(outDir, `${safeName(p.id)}.html`) }));
+    const entries = await exportAll(listJobs, { ...args, home: 'index.html' });
     const index = path.join(outDir, 'index.html');
     writeExport(index, renderIndex(entries));
     console.log(`\n总目录：${index}`);
@@ -154,4 +150,9 @@ async function main() {
 }
 
 if (isMainThread) main().catch((e) => { console.error(`出错了：${e.message}`); process.exit(1); });
-else parentPort.on('message', ({ dir, file, args }) => parentPort.postMessage(exportEntry(dir, file, args)));
+else {
+  // 工作线程：拿到任务表后自己从共享计数器里取，做完一个报一个；取不到了就退出
+  parentPort.once('message', ({ jobs, args, next }) => {
+    for (let i = Atomics.add(next, 0, 1); i < jobs.length; i = Atomics.add(next, 0, 1)) parentPort.postMessage(exportEntry(jobs[i].dir, jobs[i].file, args));
+  });
+}

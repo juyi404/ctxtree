@@ -275,6 +275,14 @@ test('写文件前再查一遍：还有像密钥的内容就一个文件都不�
   assert.throws(() => writeExport(file, renderHtml(data)), SecretLeftError);
   assert.throws(() => writeExport(file, `<p>${masked('sk-Q7m', '***', 'xK9')}</p>`), SecretLeftError);
   assert.throws(() => writeExport(file, `${pem('BEGIN')}\n${fake('', 64)}`), SecretLeftError);
+  // 复查只在候选位置附近跑规则：很长的 JWT、前面挨着别的字符、夹在一大段 base64 里的都要认出来
+  const jwt = `eyJ${fake('', 300)}.eyJ${fake('', 2000)}.${fake('', 80)}`;
+  assert.throws(() => writeExport(file, `token: ${jwt}`), SecretLeftError);
+  assert.throws(() => writeExport(file, `"${'A'.repeat(5000)} ${fake('ghp_', 36)}"`), SecretLeftError);
+  assert.throws(() => writeExport(file, `\\n${masked('sk-Q7m', '…', 'xK9')}`), SecretLeftError);
+  // 不像密钥的候选不拦：标识符、纯占位、证书块
+  assert.doesNotThrow(() => writeExport(file, 'sk-fragment-cache-v1 和 sk-... 和 ghp_… 以及 risk-assessment... -----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----'));
+  fs.rmSync(path.dirname(file), { recursive: true });
   assert.ok(!fs.existsSync(path.dirname(file)));
   // 会话 uuid 挂在 key 上不算密钥，干净的数据照常写
   const clean = parseProject(fixture());

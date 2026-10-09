@@ -30,7 +30,7 @@ node bin/ctxtree.mjs all --open
 ```
 
 - `[项目]` 可以是项目路径（`E:\PaM`）、转录目录名（`E--PaM`）或转录目录的完整路径；不写就取当前目录。
-- 默认输出到 `./out/`，`-o` 可以改。`all` 会给每个项目各生成一份，外加总目录 `index.html`；各项目分给几个工作线程并行导出（最多 8 个），大项目先做。
+- 默认输出到 `./out/`，`-o` 可以改。`all` 会给每个项目各生成一份，外加总目录 `index.html`；各项目分给几个工作线程并行导出（最多 8 个），大项目先做。单独导出一个大项目时，里面的会话和子代理文件也会分线程并行解析。
 - `--md`、`--json` 同时导出 Markdown / JSON。
 - 文件太大时用 `--no-tools`（不保存工具输入输出）、`--no-thinking`、`--max-tool 1000`。
 
@@ -72,7 +72,7 @@ node bin/ctxtree.mjs all --open
 
 ## 结构
 
-- `src/parse.mjs`：读取转录，切分轮次，接上压缩、分叉和子代理。
+- `src/parse.mjs`：读取转录，切分轮次，接上压缩、分叉和子代理；大项目按文件分给工作线程并行解析。
 - `src/template.html`：查看器页面，数据以 JSON 内嵌。CSP 按主脚本的哈希放行，所以页面里不能写内联事件（`onclick=`）、`eval` 或第二段 `<script>`，事件一律在主脚本里绑定。
 - `src/export-md.mjs`：Markdown 导出，CLI 和页面共用同一份代码。
 - `src/render.mjs`：把数据和导出代码塞进模板；工具输入输出单独放进一个 `ctx-bulk` 块，展开时才解析。

@@ -7,3 +7,5 @@ node_modules/
 *.pem
 *.key
 .claude/settings.local.json
+# bench/ 下划线开头的是临时测量脚本，不进仓库
+bench/_*

@@ -15,9 +15,11 @@ const BRAND_SHAPES = '<g fill="none" stroke-width="2.4" stroke-linecap="round" s
 const BRAND = `<svg viewBox="0 0 20 20" aria-hidden="true">${BRAND_SHAPES}</svg>`;
 const ICON = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 28 28"><rect x="-4" y="-4" width="28" height="28" rx="6" fill="#17202B"/>${BRAND_SHAPES}</svg>`)}`;
 
-// JSON 放进 <script type="application/json">：转义 < 防止提前闭合标签，顺带转义 JS 行分隔符
-const UNSAFE = new RegExp(`[<${String.fromCharCode(0x2028, 0x2029)}]`, 'g');
-const uEscape = (c) => `${String.fromCharCode(92)}u${c.charCodeAt(0).toString(16).padStart(4, '0')}`;
+// JSON 放进 <script type="application/json">：转义 < 防止提前闭合标签，顺带转义 JS 行分隔符。
+// 三个字符并进一个字符类一趟扫完（replaceAll 加 includes 要扫三遍，几 MB 的串上更慢）
+const LS = String.fromCharCode(0x2028), PS = String.fromCharCode(0x2029), BS = String.fromCharCode(92);
+const UNSAFE = new RegExp(`[<${LS}${PS}]`, 'g');
+const uEscape = (c) => `${BS}u${c.charCodeAt(0).toString(16).padStart(4, '0')}`;
 const embedJson = (data) => JSON.stringify(data).replace(UNSAFE, uEscape);
 const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -41,15 +43,16 @@ function splitBulk(data) {
     return { ...t, items };
   });
   const texts = chunks.map(embedJson);
-  const bulk = [0];
+  const bulk = [0];  // 偏移按转义后的段长算，页面按它切段，必须和最终拼出的文本逐字符对齐
   for (const s of texts) bulk.push(bulk[bulk.length - 1] + s.length);
-  return { core: { ...data, turns, bulk }, text: texts.join('') };
+  return { core: { ...data, turns, bulk }, text: texts };  // 各段不先 join，摊进最终拼接，省一次几 MB 的中间串
 }
 
 // home：总目录相对本页的路径；给了才显示顶栏的「全部项目」链接（单项目导出没有总目录）
+let template = null, exportMd = null;  // all 模式里一个线程要连着导出几个项目，模板只读一次
 export function renderHtml(data, { home } = {}) {
-  const template = lf(fs.readFileSync(path.join(here, 'template.html'), 'utf8'));
-  const exportMd = lf(fs.readFileSync(path.join(here, 'export-md.mjs'), 'utf8')).replace(/^export\s+/gm, '');
+  template ??= lf(fs.readFileSync(path.join(here, 'template.html'), 'utf8'));
+  exportMd ??= lf(fs.readFileSync(path.join(here, 'export-md.mjs'), 'utf8')).replace(/^export\s+/gm, '');
   const { core, text } = splitBulk(data);
   // 用函数形式替换，避免 $& 等特殊替换序列
   const html = template
@@ -60,10 +63,15 @@ export function renderHtml(data, { home } = {}) {
     .replace('/*__EXPORT_MD__*/', () => exportMd);
   // 主脚本定稿后再算哈希；数据块是 application/json，不执行，不受 script-src 管
   const main = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-  return html
-    .replace('__CSP__', () => `default-src 'none'; script-src 'sha256-${sha256(main)}'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'`)
-    .replace('__DATA__', () => embedJson(core))
-    .replace('<!--__BULK__-->', () => `<script id="ctx-bulk" type="application/json">${text}</script>`);
+  // 剩下三个占位符先在小模板上定位（填进去的内容都不含后面的占位符），再按位置切开拼接，
+  // 避免对越拼越大的多 MB 字符串反复扫描拷贝；bulk 各段也不先 join，直接拼进结果
+  const a = html.indexOf('__CSP__'), b = html.indexOf('__DATA__'), c = html.indexOf('<!--__BULK__-->');
+  let out = html.slice(0, a)
+    + `default-src 'none'; script-src 'sha256-${sha256(main)}'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'`
+    + html.slice(a + '__CSP__'.length, b) + embedJson(core) + html.slice(b + '__DATA__'.length, c)
+    + '<script id="ctx-bulk" type="application/json">';
+  for (const s of text) out += s;
+  return out + '</script>' + html.slice(c + '<!--__BULK__-->'.length);
 }
 
 const LINE_COLORS = ['#D7263D', '#1B7FC4', '#2A9D5C', '#E08A00', '#8E44AD', '#00989A', '#D6457A', '#6B7F2A', '#C0561E', '#3D5A98', '#7A5C3E', '#0F7B6C']; // 和 template.html 一致

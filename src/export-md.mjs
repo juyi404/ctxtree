@@ -1,10 +1,13 @@
 // 上下文树 → Markdown。此文件会被原样内联进 HTML 查看器，保持无 import、纯函数。
 
+// 输出和 toLocaleString('zh-CN', { hour12: false }) 一样，但格式器只建一次：每次新建要零点几毫秒，上千轮时占导出一半时间
+const DTF = new Intl.DateTimeFormat('zh-CN', { hour12: false, year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
 export function toMarkdown(data, opts = {}) {
   const { turnIds = null, tools = true, thinking = false, title = null } = opts;
   const byId = new Map(data.turns.map((t) => [t.id, t]));
   const laneOf = new Map(data.lanes.map((l) => [l.key, l]));
-  const fmt = (ts) => (ts ? new Date(ts).toLocaleString('zh-CN', { hour12: false }) : '');
+  const fmt = (ts) => (ts ? DTF.format(new Date(ts)) : '');
   const kfmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}k` : String(n || 0));
   const quote = (s) => String(s || '').split('\n').map((l) => `> ${l}`).join('\n');
 

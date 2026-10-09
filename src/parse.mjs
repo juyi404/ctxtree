@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { Worker, isMainThread, workerData, receiveMessageOnPort, MessageChannel } from 'node:worker_threads';
 
 export const PROJECTS_DIR = process.env.CLAUDE_CONFIG_DIR
   ? path.join(process.env.CLAUDE_CONFIG_DIR, 'projects')
@@ -16,14 +17,15 @@ export function slugOf(p) {
 }
 
 function readHeadCwd(file) {
-  // 只读文件开头一小段，找到第一条带 cwd 的记录
+  // 只读文件开头一小段，找到第一条带 cwd 的记录。cwd 一般在前三行、几百字节处，开头是大段附件时才多读一些
   const fd = fs.openSync(file, 'r');
   try {
-    const buf = Buffer.alloc(256 * 1024);
-    const n = fs.readSync(fd, buf, 0, buf.length, 0);
-    for (const line of buf.subarray(0, n).toString('utf8').split('\n')) {
-      const m = line.match(/"cwd":"((?:[^"\\]|\\.)*)"/);
+    for (const size of [16 * 1024, 256 * 1024]) {
+      const buf = Buffer.alloc(size);
+      const n = fs.readSync(fd, buf, 0, size, 0);
+      const m = buf.toString('utf8', 0, n).match(/"cwd":"((?:[^"\\]|\\.)*)"/);
       if (m) return JSON.parse(`"${m[1]}"`);
+      if (n < size) break;
     }
   } finally { fs.closeSync(fd); }
   return null;
@@ -75,7 +77,7 @@ const SLIM_MIN = 2048;
 const HEAD = 512; // 记录类型相关的键都在行首这么多字节以内
 const bytes = (s) => Buffer.from(s);
 const K_USER = bytes('"type":"user"'), K_ASSISTANT = bytes('"role":"assistant"'), K_ATTACH = bytes(',"attachment":{"type":"');
-const K_TOOL_RESULT = bytes(',"toolUseResult":'), K_AGENT_ID = bytes('"agentId"');
+const K_TOOL_RESULT = bytes(',"toolUseResult":'), K_AGENT_ID = bytes('"agentId"'), K_SIDECHAIN = bytes('"isSidechain":true');
 const K_SIGNATURE = bytes('"signature":"'), K_BASE64 = bytes('"type":"base64"'), K_DATA = bytes('"data":"');
 const QUOTE = 34, BACKSLASH = 92, LBRACE = 123, LBRACKET = 91, RBRACE = 125, RBRACKET = 93;
 
@@ -163,7 +165,7 @@ function parseSlim(line, { type, cuts }) {
   } catch { return undefined; }
 }
 
-function readJsonl(file) {
+function readJsonl(file, { dropSidechain = false } = {}) {
   const buf = fs.readFileSync(file);
   const out = [];
   for (let s = 0; s < buf.length;) {
@@ -171,6 +173,9 @@ function readJsonl(file) {
     if (e < 0) e = buf.length;
     if (e - s > 1) {
       const line = buf.subarray(s, e);
+      // 主会话文件里 isSidechain 的行是子代理的消息（子代理从 subagents/ 目录单独读），整行跳过，不解码不解析：
+      // 带子代理的项目里这些行占到三成字节
+      if (dropSidechain && line.subarray(0, HEAD).includes(K_SIDECHAIN)) { s = e + 1; continue; }
       const slim = line.length >= SLIM_MIN ? slimCuts(line) : null;
       let rec = slim ? parseSlim(line, slim) : undefined;
       if (rec === undefined) {
@@ -206,21 +211,24 @@ const assigned = (m, head, v) => {
 const NAME = String.raw`\w*?(?:key|token|secret|password|passwd|pwd)`;
 const FLAG = String.raw`[\w-]*?(?:key|token|secret|password|passwd|pwd)`;
 const VALUE = String.raw`([^\s"'\x60,;&<>(){}[\]]{6,})`;
+// 规则 1–3 都以这批固定前缀开头，先决条件共用这一个正则：redact 里一次扫描抵三条规则各扫一遍
+const PREFIX_HINT = /sk-|ak[-_]|k_(?:live|test)_|gh[pousr]_|github_pat_|hf_|AKIA|AIza|xox|eyJ/;
 // [规则, 替换, 先决条件]。先决条件是规则能命中的必要条件，不满足就跳过这条规则，结果不变：
 // 规则开头的 \b\w*? 会从每个词首试一遍，先决条件以字面量开头，引擎能直接跳着找
 const SECRET_RULES = [
   // 私钥整块；被截断时一直删到结尾
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, hide],
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, hide,
+    /-----BEGIN /],
   // 别处已经打过码的密钥（报错信息里 sk- 后面露着头几位、中间是星号或省略号、再露尾几位）：露出来的也是真字符，整段删掉。
   // 排在 sk- 那条前面，否则长的那截先被删，露出来的尾巴会留下。
   // 前缀后面只有省略号、星号的纯占位（sk-...、sk_live_****）不含真实字符，留着；
   // 要求前面不是字母数字（JSON 里的 \nsk- 除外），免得 risk-assessment... 这种词被截掉一半
-  [/(?:(?<=\\[nrt])|(?<![A-Za-z0-9]))(?:sk-|ak[_-]|[sr]k_(?:live|test)_|gh[pousr]_|github_pat_|hf_|AKIA|AIza|xox[abposr]-)(?:[A-Za-z0-9_-]+(?:\*{3,}|•{3,}|\.{3,}|…)[A-Za-z0-9_-]*|(?:\*{3,}|•{3,}|\.{3,}|…)[A-Za-z0-9_-]+)/g, hide],
+  [/(?:(?<=\\[nrt])|(?<![A-Za-z0-9]))(?:sk-|ak[_-]|[sr]k_(?:live|test)_|gh[pousr]_|github_pat_|hf_|AKIA|AIza|xox[abposr]-)(?:[A-Za-z0-9_-]+(?:\*{3,}|•{3,}|\.{3,}|…)[A-Za-z0-9_-]*|(?:\*{3,}|•{3,}|\.{3,}|…)[A-Za-z0-9_-]+)/g, hide, PREFIX_HINT],
   // sk- 开头：OpenAI、Anthropic、DeepSeek 和各家中转；ak_：Cardinal；sk_live_ 这类：Stripe。
   // 前面不要求词边界，JSON 字符串里的 \nsk-… 也要认出来；sk-fragment-cache-v1 这种不像随机串的放过
-  [/(?:sk-|ak[_-]|[sr]k_(?:live|test)_)[A-Za-z0-9_-]{16,}/g, (m) => (looksRandom(m) ? hide() : m)],
+  [/(?:sk-|ak[_-]|[sr]k_(?:live|test)_)[A-Za-z0-9_-]{16,}/g, (m) => (looksRandom(m) ? hide() : m), PREFIX_HINT],
   // 其他固定前缀：GitHub、AWS、Google、Slack、Hugging Face、JWT
-  [/\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[abposr]-[A-Za-z0-9-]{10,}|hf_[A-Za-z0-9]{30,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/g, hide],
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[abposr]-[A-Za-z0-9-]{10,}|hf_[A-Za-z0-9]{30,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/g, hide, PREFIX_HINT],
   // 连接串里的密码：scheme://user:密码@host；postgres:postgres、root:root 这种用户名当密码的本地默认值不算
   [/(\b[a-z][a-z0-9+.-]*:\/\/([^\s:\/@]+):)([^\s@\/]{4,})(?=@)/gi, (m, head, user, v) => (PLACEHOLDER.test(v) || v === user ? m : head + hide()),
     /:\/\/[^\s:\/@]+:[^\s@\/]{4,}@/],
@@ -232,8 +240,10 @@ const SECRET_RULES = [
   // 命令行参数：--api-key xxx、--password xxx
   [new RegExp(String.raw`((?:^|\s)--?${FLAG}[ \t]+["']?)${VALUE}`, 'gi'), assigned],
 ];
-// 绝大多数文字一个规则都碰不上，先粗筛一遍
-const MAYBE = /sk-|ak[_-]|k_live_|k_test_|gh[pousr]_|github_pat_|hf_|AKIA|AIza|xox|eyJ|PRIVATE KEY|:\/\/|bearer|basic|key|token|secret|passw|pwd/i;
+// 绝大多数文字一个规则都碰不上，先粗筛一遍。分支按首字母合并：引擎在每个位置只按一个字符分流，比平铺 20 个分支快四成。
+// key/token/secret 这些词后面必须紧跟 ["' \t:=] 才可能命中赋值规则，Bearer/Basic 后面必须是空白——
+// 把这个必要条件放进粗筛，工具输出里满篇的 tokens、keyboard 就不会进到逐条规则里
+const MAYBE = /s(?:k-|ecret["' \t:=])|a(?:k[_-]|kia|iza)|k(?:_(?:live|test)_|ey["' \t:=])|g(?:h[pousr]_|ithub_pat_)|hf_|xox|eyj|private key|:\/\/|b(?:earer|asic)\s|token["' \t:=]|p(?:assw(?:or)?d|wd)["' \t:=]/i;
 
 // 删掉的地方默认什么都不留；提交检查打印给人看时传一个 mark，看得出删在哪
 export function redact(s, withMark = '') {
@@ -242,7 +252,12 @@ export function redact(s, withMark = '') {
   // 删掉一段后前后文字接到一起，可能凑出新的命中，反复做到不再变化
   for (let i = 0; i < 4; i++) {
     const before = s;
-    for (const [re, fn, need] of SECRET_RULES) if (!need || need.test(s)) s = s.replace(re, fn);
+    // 共用 PREFIX_HINT 的三条规则这一轮只扫一次先决条件；中途有规则改了 s 也不要紧，下一轮会重测
+    const pfx = PREFIX_HINT.test(s);
+    for (const [re, fn, need] of SECRET_RULES) {
+      if (need === PREFIX_HINT ? !pfx : need && !need.test(s)) continue;
+      s = s.replace(re, fn);
+    }
     if (s === before || !MAYBE.test(s)) break;
   }
   return s;
@@ -267,15 +282,26 @@ export function countSecrets(v) {
   });
 }
 // 整份要写的文本只用不会误报的几条复查（私钥块、固定前缀、打过码的片段）：
-// 赋值那条会把 JSON 里的 "key":"<会话 uuid>" 当成密钥，只能在 countSecrets 里逐段查
-const STRICT = SECRET_RULES.slice(0, 4);
+// 赋值那条会把 JSON 里的 "key":"<会话 uuid>" 当成密钥，只能在 countSecrets 里逐段查。
+// 这几条都以固定字面量开头：先用一个正则把候选位置都找出来，再只在候选附近跑完整规则，
+// 不让四条规则各自扫一遍几 MB 的页面。令牌类的窗口往前带 4 个字符给打过码那条的后顾断言看，
+// 往后盖住整段连写的令牌字符（JWT 可能有几 KB）；私钥块的窗口到 END 标记为止，没有 END 就到文末
+const PEM_RULE = SECRET_RULES[0], TOKEN_RULES = SECRET_RULES.slice(1, 4);
+const STRICT_AT = /sk-|ak[_-]|[sr]k_(?:live|test)_|gh[pousr]_|github_pat_|hf_|AKIA|AIza|xox[abposr]-|eyJ|-----BEGIN /g;
+const TOKEN_RUN = /[A-Za-z0-9_.*•…-]*/y;
 export function textHasSecret(text) {
   return quietly(() => {
     mark = '';
-    let hit = false;
-    for (const [re, fn] of STRICT) {
-      text.replace(re, (...a) => { if (!hit && (typeof fn === 'function' ? fn(...a) : fn) !== a[0]) hit = true; return a[0]; });
-      if (hit) return true;
+    for (const m of text.matchAll(STRICT_AT)) {
+      if (m[0] === '-----BEGIN ') {
+        const e = text.indexOf('-----END ', m.index);
+        const w = text.slice(m.index, e < 0 ? text.length : e + 64);
+        if (w.replace(PEM_RULE[0], PEM_RULE[1]) !== w) return true;
+        continue;
+      }
+      TOKEN_RUN.lastIndex = m.index;
+      const w = text.slice(Math.max(0, m.index - 4), m.index + TOKEN_RUN.exec(text)[0].length + 1);
+      for (const [re, fn] of TOKEN_RULES) if (w.replace(re, fn) !== w) return true;
     }
     return false;
   });
@@ -505,6 +531,93 @@ function parseTranscript(records, laneKey, opts) {
 
 // ---------- 整个项目 ----------
 
+// 解析一个文件（会话或子代理），这是并行的最小单位。会话文件顺带取标题、分支和首个 cwd。
+// steps 不返回：parseProject 的 allSteps 从 items 重建，少跨线程克隆一份；
+// removed 以增量返回、全局计数回滚——没有轮次的会话的子代理整个丢弃，计数由 parseProject 按「用上的结果」累加，主线程和 worker 口径一致
+function parseFileJob(job, opts) {
+  const n0 = removed;
+  let out;
+  if (job.kind === 'session') {
+    const records = readJsonl(job.file, { dropSidechain: true });
+    let title = null, aiTitle = null, agentName = null, branch = null, cwd = null;
+    for (const r of records) {
+      if (r.type === 'custom-title' && r.customTitle) title = r.customTitle;
+      else if (r.type === 'ai-title' && r.aiTitle) aiTitle = r.aiTitle;
+      else if (r.type === 'agent-name' && r.agentName) agentName = r.agentName;
+      branch ||= r.gitBranch;
+      cwd ||= r.cwd;
+    }
+    const { steps, ...res } = parseTranscript(records.filter((r) => !r.isSidechain), job.key, opts);
+    out = { res, title: title || aiTitle || agentName, branch, cwd };
+  } else {
+    const { steps, ...res } = parseTranscript(readJsonl(job.file), job.key, opts);
+    out = { res };
+  }
+  out.removed = removed - n0;
+  removed = n0;
+  return out;
+}
+
+// 文件之间互不依赖，大项目分给工作线程（入口就是本文件，见末尾），任务靠共享内存里的认领位自取，主线程自己也是工人：
+// Windows 上一个线程要 ~30-50ms 才就绪，这段时间主线程先干着，不空等。
+// parseProject 必须保持同步（bin 和测试都同步调），结果走 MessageChannel、主线程 Atomics.wait 原地等。
+// 只在主线程开：bin 的 all 模式已按项目分线程，worker 里再开就超售；
+// 但 all 的主线程自己也解析项目（最大的那个），库里看不出调用方，只能认命令行——argv 带 all 一律不开，
+// 误判的代价只是少并行，输出不受影响。小项目也不开——8MB 单线程不到 100ms，摊不平线程启动
+const CLI_ALL = process.argv.slice(2).includes('all');
+const PAR_MIN_BYTES = 8 << 20, PAR_WORKERS = 7;
+function runJobs(jobs, opts) {
+  const results = new Array(jobs.length);
+  let sizes = null, bytes = 0;
+  if (isMainThread && !CLI_ALL && jobs.length >= 4) {
+    sizes = jobs.map((j) => { try { return fs.statSync(j.file).size; } catch { return 0; /* 刚被删 */ } });
+    bytes = sizes.reduce((a, b) => a + b, 0);
+  }
+  const cpu = os.availableParallelism?.() ?? os.cpus().length;
+  const n = bytes >= PAR_MIN_BYTES ? Math.min(PAR_WORKERS, cpu - 1, jobs.length - 1) : 0;
+  if (n < 1) {
+    for (let i = 0; i < jobs.length; i++) results[i] = parseFileJob(jobs[i], opts);
+    return results;
+  }
+  // 领取顺序按文件从大到小（结果仍按原下标归位，组装顺序不变），每个任务一个认领位（CAS），恰好一人做：
+  // worker 从大头往下扫，主线程先抢最大的那个——它最拖进度、而且主线程不用等线程就绪——然后从小头往回扫，
+  // worker 全没起来（或起得慢）主线程也能把活干完，不会卡死
+  const order = jobs.map((_, i) => i).sort((a, b) => sizes[b] - sizes[a]);
+  const shared = new Int32Array(new SharedArrayBuffer(4 + 4 * jobs.length)); // [0] 已回传的结果数；[1+k] 第 k 个任务的认领位
+  const workers = [], ports = [];
+  for (let i = 0; i < n; i++) {
+    const { port1, port2 } = new MessageChannel();
+    const w = new Worker(new URL(import.meta.url), { workerData: { ctxtreeJobs: jobs, order, opts, shared, port: port2 }, transferList: [port2] });
+    w.unref(); // 不拖住进程退出；做完任务 worker 自己退出
+    workers.push(w);
+    ports.push(port1);
+  }
+  let done = 0;
+  const drain = () => {
+    for (const p of ports) for (let m; (m = receiveMessageOnPort(p));) {
+      const { i, out, err } = m.message;
+      if (err) throw new Error(err);
+      results[i] = out;
+      done++;
+    }
+  };
+  const claim = (k) => Atomics.compareExchange(shared, 1 + k, 0, 1) === 0;
+  const run = (k) => { const i = order[k]; results[i] = parseFileJob(jobs[i], opts); done++; };
+  try {
+    if (claim(0)) run(0);
+    // 顺手收已到的结果：反序列化和解析重叠，不积到最后
+    for (let k = jobs.length - 1; k > 0; k--) { if (claim(k)) run(k); drain(); }
+    while (done < jobs.length) {
+      const seen = Atomics.load(shared, 0);
+      drain();
+      if (done >= jobs.length) break;
+      // 计数器一直没动说明有线程死了（正常一个文件远用不了这么久），报错比挂死好
+      if (Atomics.wait(shared, 0, seen, 60000) === 'timed-out' && Atomics.load(shared, 0) === seen) throw new Error('解析线程 60 秒没有进展');
+    }
+  } finally { for (const w of workers) w.terminate(); }
+  return results;
+}
+
 export function parseProject(dir, options = {}) {
   const opts = { ...DEFAULTS, ...options };
   const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
@@ -529,47 +642,47 @@ export function parseProject(dir, options = {}) {
     turnCount: res.turns.length,
   });
 
-  const pendingAgents = [];
-  for (const f of files) {
-    const sid = f.replace(/\.jsonl$/, '');
-    const records = readJsonl(path.join(dir, f));
-    let title = null, aiTitle = null, agentName = null, branch = null;
-    for (const r of records) {
-      if (r.type === 'custom-title' && r.customTitle) title = r.customTitle;
-      else if (r.type === 'ai-title' && r.aiTitle) aiTitle = r.aiTitle;
-      else if (r.type === 'agent-name' && r.agentName) agentName = r.agentName;
-      branch ||= r.gitBranch;
-      cwd ||= r.cwd;
+  // 任务一次列全（会话 + 子代理），并行只跑一轮。没有轮次的会话原本不读它的子代理，
+  // 这里先解析了也只是丢弃（结果、计数都不用），输出不变；meta 和归属留在主线程，不进任务
+  const jobs = files.map((f) => ({ kind: 'session', key: f.replace(/\.jsonl$/, ''), file: path.join(dir, f) }));
+  const agents = [];
+  if (opts.agents) for (const s of [...jobs]) {
+    const subDir = path.join(dir, s.key, 'subagents');
+    if (!fs.existsSync(subDir)) continue;
+    for (const af of fs.readdirSync(subDir).filter((x) => x.endsWith('.jsonl'))) {
+      const agentId = af.replace(/^agent-/, '').replace(/\.jsonl$/, '');
+      let meta = {};
+      try { meta = JSON.parse(fs.readFileSync(path.join(subDir, af.replace(/\.jsonl$/, '.meta.json')), 'utf8')); } catch { /* 旧版本无 meta */ }
+      agents.push({ i: jobs.length, sid: s.key, agentId, meta });
+      jobs.push({ kind: 'agent', key: `${s.key}/agent-${agentId}`, file: path.join(subDir, af) });
     }
-    const main = records.filter((r) => !r.isSidechain);
-    const res = parseTranscript(main, sid, opts);
+  }
+  const results = runJobs(jobs, opts);
+
+  const withTurns = new Set();
+  for (let i = 0; i < files.length; i++) {
+    const { res, title, branch, cwd: c, removed: n } = results[i];
+    removed += n;
+    cwd ||= c;
     if (!res.turns.length) continue;
+    const sid = jobs[i].key;
+    withTurns.add(sid);
     addTurns(res);
     lanes.push({
       key: sid, kind: 'session', sessionId: sid,
-      ...laneBase(res, title || aiTitle || agentName),
+      ...laneBase(res, title),
       branch: branch || null,
       externalParents: [...res.externalParents],
     });
-
-    const subDir = path.join(dir, sid, 'subagents');
-    if (opts.agents && fs.existsSync(subDir)) {
-      for (const af of fs.readdirSync(subDir).filter((x) => x.endsWith('.jsonl'))) {
-        const agentId = af.replace(/^agent-/, '').replace(/\.jsonl$/, '');
-        let meta = {};
-        try { meta = JSON.parse(fs.readFileSync(path.join(subDir, af.replace(/\.jsonl$/, '.meta.json')), 'utf8')); } catch { /* 旧版本无 meta */ }
-        pendingAgents.push({ sid, agentId, meta, file: path.join(subDir, af) });
-      }
-    }
   }
-
-  for (const a of pendingAgents) {
-    const key = `${a.sid}/agent-${a.agentId}`;
-    const res = parseTranscript(readJsonl(a.file), key, opts);
+  for (const a of agents) {
+    if (!withTurns.has(a.sid)) continue;
+    const { res, removed: n } = results[a.i];
+    removed += n;
     if (!res.turns.length) continue;
     addTurns(res);
     lanes.push({
-      key, kind: 'agent', sessionId: a.sid, agentId: a.agentId,
+      key: jobs[a.i].key, kind: 'agent', sessionId: a.sid, agentId: a.agentId,
       ...laneBase(res, a.meta.description),
       agentType: a.meta.agentType || 'agent', toolUseId: a.meta.toolUseId || null,
     });
@@ -621,4 +734,21 @@ export function parseProject(dir, options = {}) {
   // 删了几处只给命令行看：不可枚举，JSON.stringify 和 structuredClone 都带不走，不会写进文件
   Object.defineProperty(data, 'removed', { value: removed });
   return data;
+}
+
+// ---------- 工作线程入口 ----------
+// runJobs 拿本文件自身当 worker 入口，只认自己 workerData 里的任务标记：
+// bin 的 all 线程把本模块当库 import 时 workerData 是 null，这里不执行
+if (!isMainThread && workerData?.ctxtreeJobs) {
+  const { ctxtreeJobs: jobs, order, opts, shared, port } = workerData;
+  for (let k = 0; k < jobs.length; k++) {
+    if (Atomics.compareExchange(shared, 1 + k, 0, 1) !== 0) continue; // 被别人抢了
+    const i = order[k];
+    let msg;
+    try { msg = { i, out: parseFileJob(jobs[i], opts) }; }
+    catch (e) { msg = { i, err: `${jobs[i].file}：${e.message}` }; }
+    port.postMessage(msg);
+    Atomics.add(shared, 0, 1);
+    Atomics.notify(shared, 0);
+  }
 }
