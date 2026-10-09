@@ -34,23 +34,25 @@ node bin/ctxtree.mjs all --open
 - `--md`、`--json` 同时导出 Markdown / JSON。
 - 文件太大时用 `--no-tools`（不保存工具输入输出）、`--no-thinking`、`--max-tool 1000`。
 
-## 密钥脱敏
+## 密钥不写进文件
 
-解析时就把密钥换成 `[密钥已隐藏]`，HTML、Markdown、JSON 和压力页都只拿到脱敏后的文本，没有开关可以关掉。命令行会报告这次隐藏了几处。
+解析时就把密钥**整段删掉**，不留占位、不留标签，也不记删了几处；HTML、Markdown、JSON 和压力页拿到的都是删过的文本，没有开关可以关掉。删了几处只在命令行里报一句，不写进任何文件。
+
+写文件前还有一道检查：整份数据逐段再查一遍，要写的文本也整体查一遍，只要还有像密钥的内容，这次就一个文件都不写，直接报错退出（报错里只有文件名和处数，不带密钥）。
 
 - 认得出的：`sk-` / `ak_` / `sk_live_` 开头的 API key，GitHub、AWS、Google、Slack、Hugging Face 这类固定前缀的令牌，JWT，私钥块，连接串里的密码，`Bearer` 后面的令牌，以及 `xxx_API_KEY=`、`"token": "…"`、`--api-key …` 这类赋值里看起来随机的值。
-- 放过的：`$VAR`、`<your-key>` 这类占位，路径，代码里的属性引用，`public_key`，以及 `sk-fragment-cache-v1` 这种不像随机串的标识符。
+- 别处已经打过码的密钥（报错信息里那种 `sk-` 后面露着头几位、中间是星号或省略号、再露尾几位的）也整段删掉：露出来的那几位是真字符。
+- 放过的：`$VAR`、`<your-key>`、`sk-...` 这类不含真实字符的占位，路径，代码里的属性引用，`public_key`，以及 `sk-fragment-cache-v1` 这种不像随机串的标识符。
 - 按规则识别，不保证一个不漏；不认识格式的密钥（比如纯数字、很短的口令）可能留在页面里，外发前自己再看一眼。
 - 只处理导出的文件。`~/.claude/projects/` 下的原始转录和项目里的配置文件不会动，密钥还在那里。
-- 页面里被隐藏的位置显示成绿色的「密钥已隐藏」标签；顶栏和总目录会标出隐藏了几处。
 
 页面本身也收紧了：
 
 - 带内容安全策略（CSP）：只允许执行页面自带的那一段脚本（按哈希放行），不加载任何外部脚本、样式、字体、图片，也不发网络请求。转录里混进的 HTML 就算没被转义也执行不了。
 - 回复里的 Markdown 链接只有 `http(s)://`、`mailto:` 和页内锚点会变成可点的链接，在新标签页打开且不带来源页地址；`javascript:`、`file:`、相对路径之类只显示文字，地址放在悬停提示里。
-- 总目录 `index.html` 是纯静态页，没有脚本。
+- 总目录 `index.html` 是纯静态页，没有脚本。各项目页左上角有「全部项目」，点了回到总目录（只有 `all` 生成的页面有，单独导出的项目没有总目录可回）。
 
-仓库本身也有一道检查：`.githooks/` 里的提交前、推送前钩子用同一套规则扫新增的内容，发现密钥就拒绝提交或推送，只打印文件、行号和脱敏后的那一行。克隆下来后执行一次 `npm install`（或 `git config core.hooksPath .githooks`）启用；`npm run secrets` 扫全部历史。`.env`、`*.pem`、`*.key`、`.claude/settings.local.json` 已经在 `.gitignore` 里。
+仓库本身也有一道检查：`.githooks/` 里的提交前、推送前钩子用同一套规则扫新增的内容，发现密钥就拒绝提交或推送，只打印文件、行号和那一行（密钥的位置换成 `[已删]`）。克隆下来后执行一次 `npm install`（或 `git config core.hooksPath .githooks`）启用；`npm run secrets` 扫全部历史。`.env`、`*.pem`、`*.key`、`.claude/settings.local.json` 已经在 `.gitignore` 里。
 
 ## 页面里的操作
 
@@ -74,6 +76,7 @@ node bin/ctxtree.mjs all --open
 - `src/template.html`：查看器页面，数据以 JSON 内嵌。CSP 按主脚本的哈希放行，所以页面里不能写内联事件（`onclick=`）、`eval` 或第二段 `<script>`，事件一律在主脚本里绑定。
 - `src/export-md.mjs`：Markdown 导出，CLI 和页面共用同一份代码。
 - `src/render.mjs`：把数据和导出代码塞进模板；工具输入输出单独放进一个 `ctx-bulk` 块，展开时才解析。
+- `src/write-guard.mjs`：所有导出文件都经它写盘，写之前再查一遍密钥，查到就不写。
 - `bench/stress.mjs`：压力测试页。
 
 ```bash

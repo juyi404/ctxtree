@@ -7,6 +7,7 @@ import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { listProjects, resolveProject, parseProject, PROJECTS_DIR } from '../src/parse.mjs';
 import { renderHtml, renderIndex } from '../src/render.mjs';
 import { toMarkdown } from '../src/export-md.mjs';
+import { checkData, writeExport } from '../src/write-guard.mjs';
 
 const HELP = `ctxtree — 把一个项目下所有 Claude Code 对话导出成横向的上下文树
 
@@ -60,26 +61,27 @@ const size = (f) => `${(fs.statSync(f).size / 1024 / 1024).toFixed(1)} MB`;
 
 function exportOne(dir, htmlFile, args) {
   const data = parseProject(dir, args.opts);
-  fs.mkdirSync(path.dirname(htmlFile), { recursive: true });
-  fs.writeFileSync(htmlFile, renderHtml(data));
+  checkData(data, data.project.name);
+  writeExport(htmlFile, renderHtml(data, { home: args.home }));
   const written = [htmlFile];
   const base = htmlFile.replace(/\.html?$/i, '');
-  if (args.md) { fs.writeFileSync(`${base}.md`, toMarkdown(data, { tools: args.opts.tools })); written.push(`${base}.md`); }
-  if (args.json) { fs.writeFileSync(`${base}.json`, JSON.stringify(data, null, 2)); written.push(`${base}.json`); }
+  if (args.md) { writeExport(`${base}.md`, toMarkdown(data, { tools: args.opts.tools })); written.push(`${base}.md`); }
+  if (args.json) { writeExport(`${base}.json`, JSON.stringify(data, null, 2)); written.push(`${base}.json`); }
   return { data, written };
 }
 
 const safeName = (s) => s.replace(/[<>:"/\\|?*\s]+/g, '_');
 
-const hiddenNote = (data, sep = '，') => (data.stats.redacted ? `${sep}隐藏了 ${data.stats.redacted} 处密钥` : '');
+// 删了几处只在命令行里说，导出的文件里不写
+const removedNote = (data, sep = '，') => (data.removed ? `${sep}删掉了 ${data.removed} 处密钥` : '');
 
 // all 里的一个项目：导出后返回总目录条目和要打印的那一行；没有对话的项目不留文件
 function exportEntry(dir, file, args) {
   const { data } = exportOne(dir, file, args);
   if (!data.turns.length) { fs.rmSync(file); return {}; }
   return {
-    entry: { href: path.basename(file), name: data.project.name, cwd: data.project.cwd, sessions: data.stats.sessions, turns: data.stats.turns, end: data.stats.end, redacted: data.stats.redacted },
-    line: `✓ ${data.project.name.padEnd(28)} ${data.stats.sessions} 个会话 ${data.stats.turns} 轮  ${size(file)}${hiddenNote(data, '  ')}`,
+    entry: { href: path.basename(file), name: data.project.name, cwd: data.project.cwd, sessions: data.stats.sessions, turns: data.stats.turns, end: data.stats.end },
+    line: `✓ ${data.project.name.padEnd(28)} ${data.stats.sessions} 个会话 ${data.stats.turns} 轮  ${size(file)}${removedNote(data, '  ')}`,
   };
 }
 
@@ -131,9 +133,10 @@ async function main() {
 
   if (cmd === 'all') {
     const outDir = path.resolve(args.out || 'out');
-    const entries = await exportAll(listProjects(), outDir, args);
+    // 各项目页和 index.html 在同一个目录里，顶栏的「全部项目」用相对路径回去
+    const entries = await exportAll(listProjects(), outDir, { ...args, home: 'index.html' });
     const index = path.join(outDir, 'index.html');
-    fs.writeFileSync(index, renderIndex(entries));
+    writeExport(index, renderIndex(entries));
     console.log(`\n总目录：${index}`);
     if (args.open) openInBrowser(index);
     return;
@@ -145,7 +148,7 @@ async function main() {
   const out = path.resolve(args.out || path.join('out', `${safeName(guessName)}.html`));
   const { data, written } = exportOne(dir, out, args);
   console.log(`项目 ${data.project.name}（${data.project.cwd || dir}）`);
-  console.log(`  ${data.stats.sessions} 个会话，${data.stats.turns} 轮对话，${data.stats.agents} 个子代理，用时 ${Date.now() - t0} ms${hiddenNote(data)}`);
+  console.log(`  ${data.stats.sessions} 个会话，${data.stats.turns} 轮对话，${data.stats.agents} 个子代理，用时 ${Date.now() - t0} ms${removedNote(data)}`);
   for (const f of written) console.log(`  → ${f}  ${size(f)}`);
   if (args.open) openInBrowser(out);
 }

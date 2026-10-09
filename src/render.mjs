@@ -46,7 +46,8 @@ function splitBulk(data) {
   return { core: { ...data, turns, bulk }, text: texts.join('') };
 }
 
-export function renderHtml(data) {
+// home：总目录相对本页的路径；给了才显示顶栏的「全部项目」链接（单项目导出没有总目录）
+export function renderHtml(data, { home } = {}) {
   const template = lf(fs.readFileSync(path.join(here, 'template.html'), 'utf8'));
   const exportMd = lf(fs.readFileSync(path.join(here, 'export-md.mjs'), 'utf8')).replace(/^export\s+/gm, '');
   const { core, text } = splitBulk(data);
@@ -55,6 +56,7 @@ export function renderHtml(data) {
     .replace('__TITLE__', () => escHtml(`${data.project.name} · 上下文树`))
     .replace('__ICON__', () => ICON)
     .replace('<!--__BRAND__-->', () => BRAND)
+    .replace('href="__HOME__" title="回到总目录，看全部项目" hidden', () => (home ? `href="${escHtml(home)}" title="回到总目录，看全部项目"` : 'hidden'))
     .replace('/*__EXPORT_MD__*/', () => exportMd);
   // 主脚本定稿后再算哈希；数据块是 application/json，不执行，不受 script-src 管
   const main = html.match(/<script>([\s\S]*?)<\/script>/)[1];
@@ -65,7 +67,6 @@ export function renderHtml(data) {
 }
 
 const LINE_COLORS = ['#D7263D', '#1B7FC4', '#2A9D5C', '#E08A00', '#8E44AD', '#00989A', '#D6457A', '#6B7F2A', '#C0561E', '#3D5A98', '#7A5C3E', '#0F7B6C']; // 和 template.html 一致
-const LOCK = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>';
 const num = (x) => Number(x) || 0;
 const fmtTime = (iso) => {
   const d = new Date(iso);
@@ -78,11 +79,10 @@ const fmtTime = (iso) => {
 export function renderIndex(entries) {
   const list = [...entries].sort((a, b) => String(b.end || '').localeCompare(String(a.end || '')));
   const sum = (k) => list.reduce((a, e) => a + num(e[k]), 0);
-  const hidden = sum('redacted');
   const cards = list.map((e, i) => `<a class="p" href="${escHtml(e.href)}" style="--c:${LINE_COLORS[i % LINE_COLORS.length]}">
 <div class="h"><i></i><b title="${escHtml(e.name)}">${escHtml(e.name)}</b></div>
 <code title="${escHtml(e.cwd || '')}">${escHtml(e.cwd || '')}</code>
-<div class="m"><span><b>${num(e.sessions)}</b>个会话</span><span><b>${num(e.turns)}</b>轮对话</span>${num(e.redacted) ? `<span class="safe">${LOCK}隐藏<b>${num(e.redacted)}</b>处密钥</span>` : ''}</div>
+<div class="m"><span><b>${num(e.sessions)}</b>个会话</span><span><b>${num(e.turns)}</b>轮对话</span></div>
 <div class="t"><span>最近活动 ${escHtml(fmtTime(e.end))}</span><span class="go">打开线路图 →</span></div>
 </a>`).join('\n');
   return `<!doctype html>
@@ -94,7 +94,7 @@ export function renderIndex(entries) {
 <title>上下文树 · 全部项目</title>
 <link rel="icon" href="${ICON}">
 <style>
-:root{--paper:#EEF1F0;--paper-2:#F5F7F6;--ink:#17202B;--ink-2:#4E5B68;--ink-3:#8A96A2;--rule:#DCE2E0;--ok:#0F7B6C;--ok-bg:#E2F2EE;--sign:"Bahnschrift","DIN Alternate","Barlow","Segoe UI",sans-serif;--body:"HarmonyOS Sans SC","MiSans","PingFang SC","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;--mono:"Cascadia Code","JetBrains Mono",Consolas,monospace}
+:root{--paper:#EEF1F0;--paper-2:#F5F7F6;--ink:#17202B;--ink-2:#4E5B68;--ink-3:#8A96A2;--rule:#DCE2E0;--sign:"Bahnschrift","DIN Alternate","Barlow","Segoe UI",sans-serif;--body:"HarmonyOS Sans SC","MiSans","PingFang SC","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;--mono:"Cascadia Code","JetBrains Mono",Consolas,monospace}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;color:var(--ink);font:14px/1.5 var(--body);background:radial-gradient(1200px 600px at 75% -15%,#F8FAF9,rgba(248,250,249,0) 70%) fixed,var(--paper)}
 ::selection{background:#FFE38A}
@@ -108,8 +108,6 @@ h1 small{font:500 12px/1 var(--body);letter-spacing:.06em;color:var(--ink-3);pad
 .tot{margin-left:auto;display:flex;gap:6px;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden}
 .tot span,.m span{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 9px;background:var(--paper-2);border:1px solid var(--rule);border-radius:8px}
 .tot b,.m b{font:600 14px/1 var(--sign);color:var(--ink)}
-.safe{color:var(--ok)!important;background:var(--ok-bg)!important;border-color:#C3E4DB!important}
-.safe b{color:var(--ok)!important}
 main{max-width:1192px;margin:0 auto;padding:28px 24px 56px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
 .p{display:flex;flex-direction:column;gap:10px;min-width:0;padding:18px 18px 14px;color:inherit;text-decoration:none;background:#fff;border:1px solid #DDE3E1;border-radius:14px;box-shadow:inset 0 4px 0 var(--c),0 1px 2px rgba(23,32,43,.06);transition:transform .15s,box-shadow .15s,border-color .15s}
@@ -125,18 +123,15 @@ code:empty{display:none}
 .go{font-weight:600;color:var(--ink-2)}
 .p:hover .go{color:var(--c)}
 .empty{padding:40px;text-align:center;color:var(--ink-2);background:#fff;border:1px solid var(--rule);border-radius:14px}
-.note{display:flex;gap:10px;align-items:flex-start;margin:28px 0 0;padding:14px 16px;font-size:12.5px;line-height:1.7;color:var(--ink-2);background:#fff;border:1px solid var(--rule);border-radius:12px}
-.note svg.i{margin-top:3px;color:var(--ok)}
 @media (max-width:720px){.tot{display:none}}
 @media (prefers-reduced-motion:reduce){.p{transition:none}.p:hover{transform:none}}
 </style>
 </head>
 <body>
 <header class="top"><div class="brand" aria-hidden="true">${BRAND}</div><h1>上下文树<small>全部项目</small></h1>
-<div class="tot"><span><b>${list.length}</b>个项目</span><span><b>${sum('sessions')}</b>个会话</span><span><b>${sum('turns')}</b>轮对话</span>${hidden ? `<span class="safe">${LOCK}已隐藏<b>${hidden}</b>处密钥</span>` : ''}</div></header>
+<div class="tot"><span><b>${list.length}</b>个项目</span><span><b>${sum('sessions')}</b>个会话</span><span><b>${sum('turns')}</b>轮对话</span></div></header>
 <main>
 ${list.length ? `<div class="grid">\n${cards}\n</div>` : '<div class="empty">没有找到可显示的项目。先用 Claude Code 聊几轮，再重新生成。</div>'}
-<p class="note">${LOCK}<span>${hidden ? `生成时按规则隐藏了 ${hidden} 处密钥（API key、令牌、私钥、连接串密码等），页面里只剩「密钥已隐藏」标签。` : '生成时按规则检查过密钥，没有发现需要隐藏的内容。'}规则识别不保证一个不漏，外发前请再看一眼；<code style="display:inline;padding:1px 5px">~/.claude/projects/</code> 下的原始转录不受影响。</span></p>
 </main>
 </body>
 </html>

@@ -183,12 +183,11 @@ function readJsonl(file) {
   return out;
 }
 
-// ---------- 密钥脱敏 ----------
-// 转录会原样留下密钥（.env、请求头、配置文件、连接串）。写进导出文件的文字一律先过 redact，认出来的换成占位，不能关。
-// hidden 记本次 parseProject 隐藏了几处
-export const HIDDEN = '[密钥已隐藏]';
-let hidden = 0;
-const hide = () => { hidden++; return HIDDEN; };
+// ---------- 去掉密钥 ----------
+// 转录会原样留下密钥（.env、请求头、配置文件、连接串）。写进导出文件的文字一律先过 redact，认出来的整段删掉，
+// 原地什么都不留，不能关。removed 记本次 parseProject 删了几处，只报给命令行，不写进导出的文件
+let removed = 0, mark = '';
+const hide = () => { removed++; return mark; };
 const alnumMix = (s) => /[A-Za-z]/.test(s) && /\d/.test(s);
 // 随机串里总有一段 16 位以上字母数字混排的；sk-fragment-cache-v1、gamenet2-review-v1 这类标识符没有
 const looksRandom = (s) => (s.match(/[A-Za-z0-9]{16,}/g) || []).some(alnumMix);
@@ -210,8 +209,13 @@ const VALUE = String.raw`([^\s"'\x60,;&<>(){}[\]]{6,})`;
 // [规则, 替换, 先决条件]。先决条件是规则能命中的必要条件，不满足就跳过这条规则，结果不变：
 // 规则开头的 \b\w*? 会从每个词首试一遍，先决条件以字面量开头，引擎能直接跳着找
 const SECRET_RULES = [
-  // 私钥整块；被截断时一直隐藏到结尾
+  // 私钥整块；被截断时一直删到结尾
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, hide],
+  // 别处已经打过码的密钥（报错信息里 sk- 后面露着头几位、中间是星号或省略号、再露尾几位）：露出来的也是真字符，整段删掉。
+  // 排在 sk- 那条前面，否则长的那截先被删，露出来的尾巴会留下。
+  // 前缀后面只有省略号、星号的纯占位（sk-...、sk_live_****）不含真实字符，留着；
+  // 要求前面不是字母数字（JSON 里的 \nsk- 除外），免得 risk-assessment... 这种词被截掉一半
+  [/(?:(?<=\\[nrt])|(?<![A-Za-z0-9]))(?:sk-|ak[_-]|[sr]k_(?:live|test)_|gh[pousr]_|github_pat_|hf_|AKIA|AIza|xox[abposr]-)(?:[A-Za-z0-9_-]+(?:\*{3,}|•{3,}|\.{3,}|…)[A-Za-z0-9_-]*|(?:\*{3,}|•{3,}|\.{3,}|…)[A-Za-z0-9_-]+)/g, hide],
   // sk- 开头：OpenAI、Anthropic、DeepSeek 和各家中转；ak_：Cardinal；sk_live_ 这类：Stripe。
   // 前面不要求词边界，JSON 字符串里的 \nsk-… 也要认出来；sk-fragment-cache-v1 这种不像随机串的放过
   [/(?:sk-|ak[_-]|[sr]k_(?:live|test)_)[A-Za-z0-9_-]{16,}/g, (m) => (looksRandom(m) ? hide() : m)],
@@ -231,10 +235,50 @@ const SECRET_RULES = [
 // 绝大多数文字一个规则都碰不上，先粗筛一遍
 const MAYBE = /sk-|ak[_-]|k_live_|k_test_|gh[pousr]_|github_pat_|hf_|AKIA|AIza|xox|eyJ|PRIVATE KEY|:\/\/|bearer|basic|key|token|secret|passw|pwd/i;
 
-export function redact(s) {
+// 删掉的地方默认什么都不留；提交检查打印给人看时传一个 mark，看得出删在哪
+export function redact(s, withMark = '') {
   if (!s || !MAYBE.test(s)) return s;
-  for (const [re, fn, need] of SECRET_RULES) if (!need || need.test(s)) s = s.replace(re, fn);
+  mark = withMark;
+  // 删掉一段后前后文字接到一起，可能凑出新的命中，反复做到不再变化
+  for (let i = 0; i < 4; i++) {
+    const before = s;
+    for (const [re, fn, need] of SECRET_RULES) if (!need || need.test(s)) s = s.replace(re, fn);
+    if (s === before || !MAYBE.test(s)) break;
+  }
   return s;
+}
+
+// ---------- 写文件前的检查 ----------
+// 不计入 removed：检查只看有没有，不算解析时删掉的
+function quietly(fn) {
+  const n = removed;
+  try { return fn(); } finally { removed = n; }
+}
+// 数据里还有几段文字（连同键名）能被 redact 改动。导出的数据都已经过 redact，正常是 0
+export function countSecrets(v) {
+  return quietly(() => {
+    let n = 0;
+    const walk = (x) => {
+      if (typeof x === 'string') { if (redact(x) !== x) n++; } else if (Array.isArray(x)) x.forEach(walk);
+      else if (x && typeof x === 'object') for (const k of Object.keys(x)) { walk(k); walk(x[k]); }
+    };
+    walk(v);
+    return n;
+  });
+}
+// 整份要写的文本只用不会误报的几条复查（私钥块、固定前缀、打过码的片段）：
+// 赋值那条会把 JSON 里的 "key":"<会话 uuid>" 当成密钥，只能在 countSecrets 里逐段查
+const STRICT = SECRET_RULES.slice(0, 4);
+export function textHasSecret(text) {
+  return quietly(() => {
+    mark = '';
+    let hit = false;
+    for (const [re, fn] of STRICT) {
+      text.replace(re, (...a) => { if (!hit && (typeof fn === 'function' ? fn(...a) : fn) !== a[0]) hit = true; return a[0]; });
+      if (hit) return true;
+    }
+    return false;
+  });
 }
 
 function redactDeep(v) {
@@ -248,8 +292,8 @@ function redactDeep(v) {
   return v;
 }
 
-// 先脱敏再截断，免得密钥被截成半截认不出。长文本只对截断处往后多留的一截做脱敏，不用扫完几 MB 的输出；
-// 这一截末尾被切开的半个词（最多 512 字符）先去掉——前面的密钥换成短占位后，它可能被挪进保留范围。
+// 先删密钥再截断，免得密钥被截成半截认不出。长文本只对截断处往后多留的一截查密钥，不用扫完几 MB 的输出；
+// 这一截末尾被切开的半个词（最多 512 字符）先去掉——前面的密钥删掉后，它可能被挪进保留范围。
 // 半个词倒着找分隔符：写成 /[^…]{1,512}$/ 时引擎会从每个位置起试一遍，长输出上占掉解析的一半时间
 const WORD_STOP = /[\s"'`,;<>(){}[\]]/;
 function dropCutWord(w) {
@@ -402,7 +446,7 @@ function parseTranscript(records, laneKey, opts) {
           t.items.push({ k: 'think', text: clip(b.thinking, opts.maxThinking) });
         } else if (b.type === 'tool_use') {
           t.tools[b.name] = (t.tools[b.name] || 0) + 1;
-          // 先逐个字符串脱敏再序列化：序列化后换行变成字面的 \n，粘在密钥前面会让词边界失效
+          // 先逐个字符串删密钥再序列化：序列化后换行变成字面的 \n，粘在密钥前面会让词边界失效
           const input = redactDeep(b.input ?? {});
           const step = { k: 'tool', id: b.id, name: b.name, sum: toolSummary(b.name, input), ts: r.timestamp };
           if (opts.tools) step.input = clip(JSON.stringify(input, null, 2), opts.maxTool);
@@ -469,7 +513,7 @@ export function parseProject(dir, options = {}) {
   const allSteps = new Map(); // tool_use_id → { step, turn }
   const uuidOwner = new Map(); // 原始消息 uuid → 所在的轮（跨会话分叉用）
   let cwd = null;
-  hidden = 0;
+  removed = 0;
 
   const addTurns = (res) => {
     for (const t of res.turns) {
@@ -557,7 +601,7 @@ export function parseProject(dir, options = {}) {
   lanes.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
   const sessions = lanes.filter((l) => l.kind === 'session');
   const sessionKeys = new Set(sessions.map((l) => l.key));
-  return {
+  const data = {
     version: 1,
     generatedAt: new Date().toISOString(),
     project: {
@@ -570,9 +614,11 @@ export function parseProject(dir, options = {}) {
       turns: turns.filter((t) => sessionKeys.has(t.lane)).length,
       start: sessions[0]?.start || null,
       end: sessions.reduce((m, s) => (s.end > m ? s.end : m), ''),
-      redacted: hidden,
     },
     lanes,
     turns,
   };
+  // 删了几处只给命令行看：不可枚举，JSON.stringify 和 structuredClone 都带不走，不会写进文件
+  Object.defineProperty(data, 'removed', { value: removed });
+  return data;
 }

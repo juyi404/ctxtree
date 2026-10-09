@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// 提交、推送前查密钥：用 parse.mjs 导出脱敏的同一套规则扫新增的行，命中就拦下。
-// 只打印文件、行号和脱敏后的那一行，不打印密钥本身。
+// 提交、推送前查密钥：用 parse.mjs 导出时删密钥的同一套规则扫新增的行，命中就拦下。
+// 只打印文件、行号和那一行（密钥的位置换成 [已删]），不打印密钥本身。
 //   --staged  暂存区（pre-commit）
 //   --push    这次要推送的所有提交（pre-push，从标准输入读引用）
 //   --all     全部历史
@@ -19,7 +19,7 @@ function scanDiff(diff, where, found) {
     const text = block.map((b) => b.text).join('\n');
     if (redact(text) !== text) {
       const lines = block.filter((b) => redact(b.text) !== b.text);
-      for (const b of lines.length ? lines : [block[0]]) found.push({ where, file, line: b.line, text: redact(b.text) });
+      for (const b of lines.length ? lines : [block[0]]) found.push({ where, file, line: b.line, text: redact(b.text, '[已删]') });
     }
     block = [];
   };

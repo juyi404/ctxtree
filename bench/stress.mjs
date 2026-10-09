@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveProject, parseProject } from '../src/parse.mjs';
 import { renderHtml } from '../src/render.mjs';
+import { checkData, writeExport } from '../src/write-guard.mjs';
 
 const [arg = 'E--Projects-context-gateway', copies = '12'] = process.argv.slice(2);
 const base = parseProject(resolveProject(arg));
@@ -19,8 +20,9 @@ lanes.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
 const data = {
   ...base, turns, lanes,
   project: { ...base.project, name: `压力测试 ×${copies}` },
-  stats: { ...base.stats, sessions: lanes.filter((l) => l.kind === 'session').length, agents: lanes.filter((l) => l.kind === 'agent').length, turns: turns.length, redacted: (base.stats.redacted || 0) * Number(copies) },
+  stats: { ...base.stats, sessions: lanes.filter((l) => l.kind === 'session').length, agents: lanes.filter((l) => l.kind === 'agent').length, turns: turns.length },
 };
 const out = path.resolve('out/stress.html');
-fs.writeFileSync(out, renderHtml(data));
+checkData(data, data.project.name);
+writeExport(out, renderHtml(data));
 console.log(`${out}  ${turns.length} 轮  ${lanes.length} 条线路  ${(fs.statSync(out).size / 1048576).toFixed(1)} MB`);

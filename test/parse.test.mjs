@@ -4,9 +4,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseProject, redact, HIDDEN } from '../src/parse.mjs';
+import { parseProject, redact } from '../src/parse.mjs';
 import { renderHtml, renderIndex } from '../src/render.mjs';
 import { toMarkdown } from '../src/export-md.mjs';
+import { checkData, writeExport, SecretLeftError } from '../src/write-guard.mjs';
 
 // 记录构造器：时间戳全局递增，保证各会话先后有序
 let n = 0;
@@ -116,15 +117,13 @@ test('页面带 CSP：只放行自己那一段主脚本，不许外链和联网'
   assert.ok(!/<script[^>]*\ssrc=/i.test(html));
   const hash = crypto.createHash('sha256').update(mainScript(html), 'utf8').digest('base64');
   assert.ok(csp.includes(`script-src 'sha256-${hash}'`));
-  // 页面按这串占位画「密钥已隐藏」标签，要和 parse.mjs 一致
-  assert.ok(mainScript(html).includes(`const HIDDEN = '${HIDDEN}'`));
 });
 
 test('回复里的链接只放行 http(s)、mailto 和锚点，属性闭合不了', () => {
   const main = mainScript(renderHtml(parseProject(fixture())));
   const pick = (re) => main.match(re)[0];
-  const lib = [/^const esc = .*$/m, /^const HIDDEN = .*$/m, /^const chipHidden = .*$/m, /^function inline\(s\) \{[\s\S]*?^\}$/m].map(pick).join('\n');
-  const { inline, chipHidden } = new Function(`${lib}\nreturn { inline, chipHidden };`)();
+  const lib = [/^const esc = .*$/m, /^function inline\(s\) \{[\s\S]*?^\}$/m].map(pick).join('\n');
+  const inline = new Function(`${lib}\nreturn inline;`)();
   const ctrl = String.fromCharCode(1);
   for (const s of ['[a](javascript:alert(1))', `[a](${ctrl}javascript:alert(1))`, '[a](JavaScript:x)', '[a](data:text/html,x)', '[a](//evil.example)', '[a](vbscript:x)']) {
     assert.ok(!inline(s).includes('<a '), s);
@@ -133,14 +132,13 @@ test('回复里的链接只放行 http(s)、mailto 和锚点，属性闭合不�
   assert.equal(inline('[a](https://x.example/"onmouseover=alert(1))'), '<a href="https://x.example/&quot;onmouseover=alert(1" target="_blank" rel="noopener noreferrer">a</a>)');
   assert.equal(inline('[foo.ts](src/foo.ts:42)'), '<span class="lk" title="src/foo.ts:42">foo.ts</span>');
   assert.ok(!/href="[^"]*<code/.test(inline('[a](`x`) 和 [b](https://x.example/`y`)')));
-  assert.equal(chipHidden(`key=${HIDDEN}`), 'key=<i class=rd>密钥已隐藏</i>');
 });
 
 test('总目录转义项目名和路径，没有脚本', () => {
-  const html = renderIndex([{ href: 'a"b.html', name: '<img src=x onerror=alert(1)>', cwd: 'E:/x', sessions: '3', turns: 'oops', end: '2026-09-01T00:00:00Z', redacted: 2 }]);
+  const html = renderIndex([{ href: 'a"b.html', name: '<img src=x onerror=alert(1)>', cwd: 'E:/x', sessions: '3', turns: 'oops', end: '2026-09-01T00:00:00Z' }]);
   assert.ok(!html.includes('<img') && !html.includes('a"b'));
   assert.ok(!/<script/i.test(html) && html.includes("default-src 'none'"));
-  assert.ok(html.includes('<b>3</b>个会话') && html.includes('<b>0</b>轮对话') && html.includes('隐藏<b>2</b>处密钥'));
+  assert.ok(html.includes('<b>3</b>个会话') && html.includes('<b>0</b>轮对话'));
 });
 
 test('从别的会话分叉出来的会话接到父消息所在的那一轮，父消息是回答也行', () => {
@@ -200,8 +198,11 @@ test('认得出常见密钥，普通标识符和文档里的示例占位不动',
   ];
   for (const s of hit) {
     const out = redact(s);
-    assert.equal(out.split(HIDDEN).length - 1, 1, s.slice(0, 24));
     assert.ok(!/Q7mZ2x|Q7MZ2X|426614174000/.test(out), s.slice(0, 24));
+    // 删掉的地方什么都不留；给了标记才看得出删在哪，一处命中只删一段
+    const marked = redact(s, '¤');
+    assert.equal(marked.split('¤').length - 1, 1, s.slice(0, 24));
+    assert.equal(out, marked.replace('¤', ''), s.slice(0, 24));
   }
   const keep = [
     'sk-fragment-cache-v1',
@@ -221,6 +222,22 @@ test('认得出常见密钥，普通标识符和文档里的示例占位不动',
   for (const s of keep) assert.equal(redact(s), s);
 });
 
+// 别处打过码的密钥，露出来的头尾也是真字符
+const masked = (head, dots, tail) => head + dots + tail;
+
+test('打过码的半截密钥整段删掉，只有前缀和省略号的占位不动', () => {
+  const hit = [
+    `报错：Incorrect API key provided: ${masked('sk-Q7m', '***', 'xK9')}`,
+    `用的是 ${masked('sk-proj-Q7mZ2', '...', 'pL4wQ7')} 这个`,
+    `${masked('ghp_', '****', 'pL4wQ7mZ')}`,
+    `"command": "echo\\n${masked('sk-Q7m', '…', 'xK9')}"`,
+    `key=${masked('sk-Q7mZ2', '*'.repeat(55), 'pL4w')}`,
+  ];
+  for (const s of hit) assert.ok(!/Q7m|pL4w/.test(redact(s)), s.slice(0, 30));
+  const keep = ['sk-...', 'sk_live_****', '把 sk-*** 换成你自己的', 'risk-assessment... 写完了', 'ghp_…'];
+  for (const s of keep) assert.equal(redact(s), s);
+});
+
 test('导出的 JSON、HTML、Markdown 里都不留密钥，截断处的密钥也不留半截', () => {
   const data = parseProject(fixture((dir) => {
     const { user, asst } = builders('s4');
@@ -232,15 +249,36 @@ test('导出的 JSON、HTML、Markdown 里都不留密钥，截断处的密钥�
         { type: 'tool_use', id: 'kt1', name: 'Bash', input: { command: `cd app\nOPENAI_API_KEY=${SK} npm start` } },
       ]),
       // 密钥正好跨在默认的 4000 字截断处
-      user('k3', 'k2', [{ type: 'tool_result', tool_use_id: 'kt1', content: `${'x'.repeat(3990)} ${SK} 后面还有` }]),
+      user('k3', 'k2', [{ type: 'tool_result', tool_use_id: 'kt1', content: `${'x'.repeat(3990)} ${SK} ${'后面还有'.repeat(30)}` }]),
     ]);
   }));
-  assert.equal(data.stats.redacted, 5);
+  // 删了几处只给命令行看：不可枚举，序列化、复制都带不走
+  assert.equal(data.removed, 5);
+  assert.ok(!Object.keys(data).includes('removed') && !('redacted' in data.stats));
   const step = data.turns.find((t) => t.lane === 's4').items.find((i) => i.k === 'tool');
   assert.equal(step.sum, 'cd app');
-  assert.ok(step.input.includes(`OPENAI_API_KEY=${HIDDEN}`));
-  assert.ok(step.result.includes(HIDDEN) && step.result.includes('原长 4047 字符'));
+  assert.ok(step.input.includes('OPENAI_API_KEY= npm start'));
+  assert.ok(step.result.startsWith(`${'x'.repeat(3990)}  后面还有`) && step.result.includes('原长 4163 字符'));
   for (const out of [JSON.stringify(data), renderHtml(structuredClone(data)), toMarkdown(data, { thinking: true })]) {
     assert.ok(!out.includes(SK.slice(0, 9)));
+    assert.ok(!/密钥已隐藏|隐藏了|删掉了/.test(out));
   }
+});
+
+test('写文件前再查一遍：还有像密钥的内容就一个文件都不写，报错里也不带密钥', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxtree-out-'));
+  const file = path.join(dir, 'sub', 'a.html');
+  const data = parseProject(fixture());
+  data.turns[0].prompt = `漏网的 ${SK}`;
+  assert.throws(() => checkData(data, 'demo'), (e) => e instanceof SecretLeftError && !e.message.includes(SK.slice(3, 9)));
+  data.lanes[0].title = `漏网的 ${fake('ghp_', 36)}`;
+  assert.throws(() => writeExport(file, renderHtml(data)), SecretLeftError);
+  assert.throws(() => writeExport(file, `<p>${masked('sk-Q7m', '***', 'xK9')}</p>`), SecretLeftError);
+  assert.throws(() => writeExport(file, `${pem('BEGIN')}\n${fake('', 64)}`), SecretLeftError);
+  assert.ok(!fs.existsSync(path.dirname(file)));
+  // 会话 uuid 挂在 key 上不算密钥，干净的数据照常写
+  const clean = parseProject(fixture());
+  checkData(clean, 'demo');
+  writeExport(file, renderHtml(clean, { home: 'index.html' }));
+  assert.ok(fs.statSync(file).size > 0);
 });
